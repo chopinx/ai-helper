@@ -1,15 +1,74 @@
 import Foundation
+import UIKit
 
 class AIService: ObservableObject {
     private let urlSession = URLSession.shared
     
     func sendMessage(_ message: String, configuration: APIConfiguration) async throws -> String {
+        let messageWithContext = addCommonContext(to: message)
+        
+        switch configuration.provider {
+        case .openai:
+            return try await sendOpenAIMessage(messageWithContext, configuration: configuration)
+        case .claude:
+            return try await sendClaudeMessage(messageWithContext, configuration: configuration)
+        }
+    }
+    
+    // Internal method for system prompts that already have context
+    func sendMessageWithoutContext(_ message: String, configuration: APIConfiguration) async throws -> String {
         switch configuration.provider {
         case .openai:
             return try await sendOpenAIMessage(message, configuration: configuration)
         case .claude:
             return try await sendClaudeMessage(message, configuration: configuration)
         }
+    }
+    
+    private func addCommonContext(to message: String) -> String {
+        let now = Date()
+        let calendar = Calendar.current
+        let timeZone = TimeZone.current
+        
+        // Full date and time
+        let fullDateFormatter = DateFormatter()
+        fullDateFormatter.dateStyle = .full
+        fullDateFormatter.timeStyle = .short
+        
+        // ISO format for easy parsing
+        let isoDateFormatter = DateFormatter()
+        isoDateFormatter.dateFormat = "yyyy-MM-dd"
+        
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "HH:mm"
+        
+        let dayFormatter = DateFormatter()
+        dayFormatter.dateFormat = "EEEE"
+        
+        // Calculate relative dates
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+        let nextWeek = calendar.date(byAdding: .weekOfYear, value: 1, to: now) ?? now
+        
+        // Device/app context
+        let locale = Locale.current
+        let deviceModel = UIDevice.current.model
+        
+        let context = """
+        Current context:
+        - Current date and time: \(fullDateFormatter.string(from: now))
+        - Today: \(isoDateFormatter.string(from: now)) (\(dayFormatter.string(from: now)))
+        - Current time: \(timeFormatter.string(from: now))
+        - Tomorrow: \(isoDateFormatter.string(from: tomorrow)) (\(dayFormatter.string(from: tomorrow)))
+        - Next week (same day): \(isoDateFormatter.string(from: nextWeek))
+        - Time zone: \(timeZone.identifier) (\(timeZone.abbreviation(for: now) ?? ""))
+        - Week of year: \(calendar.component(.weekOfYear, from: now))
+        - Device: \(deviceModel)
+        - Locale: \(locale.identifier)
+        
+        User message: \(message)
+        """
+        
+        return context
     }
     
     private func sendOpenAIMessage(_ message: String, configuration: APIConfiguration) async throws -> String {

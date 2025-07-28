@@ -71,13 +71,15 @@ struct APIConfiguration: Codable {
     var model: String
     var maxTokens: Int
     var temperature: Double
+    var enableMCP: Bool
     
-    init(provider: AIProvider = .openai, apiKey: String = "", model: String = "", maxTokens: Int = 1000, temperature: Double = 0.7) {
+    init(provider: AIProvider = .openai, apiKey: String = "", model: String = "", maxTokens: Int = 1000, temperature: Double = 0.7, enableMCP: Bool = true) {
         self.provider = provider
         self.apiKey = apiKey
         self.model = model.isEmpty ? provider.defaultModel : model
         self.maxTokens = maxTokens
         self.temperature = temperature
+        self.enableMCP = enableMCP
     }
 }
 
@@ -101,6 +103,8 @@ class ChatViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var apiConfiguration: APIConfiguration = APIConfiguration()
     
+    private let aiService = AIService()
+    private let mcpAIService = SimpleMCPAIService()
     private let userDefaults = UserDefaults.standard
     private let configKey = "APIConfiguration"
     
@@ -118,6 +122,46 @@ class ChatViewModel: ObservableObject {
         if let data = userDefaults.data(forKey: configKey),
            let config = try? JSONDecoder().decode(APIConfiguration.self, from: data) {
             apiConfiguration = config
+        }
+    }
+    
+    func sendMessage() async {
+        guard !currentMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !apiConfiguration.apiKey.isEmpty else { return }
+        
+        let userMessage = ChatMessage(content: currentMessage, isUser: true)
+        
+        await MainActor.run {
+            messages.append(userMessage)
+            isLoading = true
+        }
+        
+        let messageToSend = currentMessage
+        
+        await MainActor.run {
+            currentMessage = ""
+        }
+        
+        do {
+            let response: String
+            if apiConfiguration.enableMCP {
+                response = try await mcpAIService.sendMessage(messageToSend, configuration: apiConfiguration)
+            } else {
+                response = try await aiService.sendMessage(messageToSend, configuration: apiConfiguration)
+            }
+            
+            let aiMessage = ChatMessage(content: response, isUser: false)
+            
+            await MainActor.run {
+                messages.append(aiMessage)
+                isLoading = false
+            }
+        } catch {
+            let errorMessage = ChatMessage(content: "Error: \(error.localizedDescription)", isUser: false)
+            await MainActor.run {
+                messages.append(errorMessage)
+                isLoading = false
+            }
         }
     }
 }

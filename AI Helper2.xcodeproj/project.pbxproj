@@ -400,6 +400,8 @@
 				DEVELOPMENT_TEAM = R743AM4955;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "AI-Helper2-Info.plist";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "We need access to your calendar to create events.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "We need microphone to record your voice input.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "We need speech recognition to convert your voice input into text for creating calendar events.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -430,6 +432,8 @@
 				DEVELOPMENT_TEAM = R743AM4955;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "AI-Helper2-Info.plist";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "We need access to your calendar to create events.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "We need microphone to record your voice input.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "We need speech recognition to convert your voice input into text for creating calendar events.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

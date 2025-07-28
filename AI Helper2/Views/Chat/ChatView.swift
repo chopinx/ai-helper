@@ -3,7 +3,6 @@ import SwiftUI
 struct ChatView: View {
     @StateObject private var chatViewModel = ChatViewModel()
     @StateObject private var voiceInputManager = VoiceInputManager()
-    @StateObject private var aiService = AIService()
     @State private var showingSettings = false
     
     var body: some View {
@@ -43,13 +42,19 @@ struct ChatView: View {
                 
                 ChatInputView(
                     chatViewModel: chatViewModel,
-                    voiceInputManager: voiceInputManager,
-                    aiService: aiService
+                    voiceInputManager: voiceInputManager
                 )
             }
             .navigationTitle("AI Assistant")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if chatViewModel.apiConfiguration.enableMCP {
+                        Label("Calendar", systemImage: "calendar")
+                            .font(.caption2)
+                            .foregroundColor(.blue)
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Settings") {
                         showingSettings = true
@@ -62,8 +67,12 @@ struct ChatView: View {
         }
         .onAppear {
             if chatViewModel.messages.isEmpty {
+                let greeting = chatViewModel.apiConfiguration.enableMCP ? 
+                    "Hello! I'm your AI assistant with calendar integration. I can help answer questions and create calendar events for you. Try saying 'Create a meeting tomorrow at 2 PM' or just ask me anything!" :
+                    "Hello! I'm your AI assistant. How can I help you today?"
+                
                 chatViewModel.messages.append(
-                    ChatMessage(content: "Hello! I'm your AI assistant. How can I help you today?", isUser: false)
+                    ChatMessage(content: greeting, isUser: false)
                 )
             }
         }
@@ -80,11 +89,26 @@ struct MessageBubble: View {
             }
             
             VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
-                Text(message.content)
-                    .padding(12)
-                    .background(message.isUser ? Color.blue : Color.gray.opacity(0.2))
-                    .foregroundColor(message.isUser ? .white : .primary)
-                    .cornerRadius(16)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(message.content)
+                        .padding(12)
+                        .background(message.isUser ? Color.blue : Color.gray.opacity(0.2))
+                        .foregroundColor(message.isUser ? .white : .primary)
+                        .cornerRadius(16)
+                    
+                    // Show calendar icon for successful calendar events
+                    if !message.isUser && message.content.contains("✅") && message.content.contains("calendar event") {
+                        HStack {
+                            Image(systemName: "calendar.badge.plus")
+                                .font(.caption2)
+                                .foregroundColor(.green)
+                            Text("Calendar event created")
+                                .font(.caption2)
+                                .foregroundColor(.green)
+                        }
+                        .padding(.horizontal, 4)
+                    }
+                }
                 
                 Text(DateFormatter.time.string(from: message.timestamp))
                     .font(.caption2)
@@ -101,11 +125,22 @@ struct MessageBubble: View {
 struct ChatInputView: View {
     @ObservedObject var chatViewModel: ChatViewModel
     @ObservedObject var voiceInputManager: VoiceInputManager
-    @ObservedObject var aiService: AIService
     @State private var showingVoiceInput = false
     
     var body: some View {
         VStack(spacing: 12) {
+            // Quick actions for MCP
+            if chatViewModel.apiConfiguration.enableMCP && chatViewModel.currentMessage.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        quickActionButton("📅 Create event", "Create a meeting tomorrow at 2 PM")
+                        quickActionButton("⏰ Set reminder", "Remind me about the presentation on Friday")
+                        quickActionButton("📝 Schedule call", "Schedule a call with John next week")
+                    }
+                    .padding(.horizontal)
+                }
+            }
+            
             if showingVoiceInput {
                 VoiceInputView(voiceInputManager: voiceInputManager) {
                     showingVoiceInput = false
@@ -148,29 +183,22 @@ struct ChatInputView: View {
     }
     
     private func sendMessage() {
-        let userMessage = chatViewModel.currentMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !userMessage.isEmpty else { return }
-        
-        chatViewModel.messages.append(ChatMessage(content: userMessage, isUser: true))
-        chatViewModel.currentMessage = ""
-        chatViewModel.isLoading = true
-        
         Task {
-            do {
-                let response = try await aiService.sendMessage(userMessage, configuration: chatViewModel.apiConfiguration)
-                
-                await MainActor.run {
-                    chatViewModel.messages.append(ChatMessage(content: response, isUser: false))
-                    chatViewModel.isLoading = false
-                }
-            } catch {
-                await MainActor.run {
-                    chatViewModel.messages.append(
-                        ChatMessage(content: "Sorry, I encountered an error: \(error.localizedDescription)", isUser: false)
-                    )
-                    chatViewModel.isLoading = false
-                }
-            }
+            await chatViewModel.sendMessage()
+        }
+    }
+    
+    private func quickActionButton(_ title: String, _ message: String) -> some View {
+        Button(action: {
+            chatViewModel.currentMessage = message
+        }) {
+            Text(title)
+                .font(.caption)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.blue.opacity(0.1))
+                .foregroundColor(.blue)
+                .cornerRadius(16)
         }
     }
 }

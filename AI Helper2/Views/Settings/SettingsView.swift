@@ -77,6 +77,29 @@ struct SettingsView: View {
                     }
                 }
                 
+                Section(header: Text("Calendar Integration")) {
+                    Toggle("Enable Calendar Integration", isOn: $chatViewModel.apiConfiguration.enableMCP)
+                    
+                    if chatViewModel.apiConfiguration.enableMCP {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("When enabled, I can create calendar events from your messages")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            HStack {
+                                Label("Calendar", systemImage: "calendar")
+                                    .font(.caption2)
+                                    .foregroundColor(.blue)
+                                Text("Create events")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+                
                 Section(header: Text("Current Configuration")) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
