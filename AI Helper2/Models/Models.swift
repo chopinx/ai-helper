@@ -17,20 +17,20 @@ enum AIProvider: String, CaseIterable, Codable {
         switch self {
         case .openai:
             return [
-                "gpt-4o",
-                "gpt-4o-mini",
-                "gpt-4-turbo",
-                "gpt-4",
-                "gpt-3.5-turbo",
-                "gpt-3.5-turbo-16k"
+                "gpt-4o",              // ✅ Tool calling supported
+                "gpt-4o-mini",         // ✅ Tool calling supported
+                "gpt-4-turbo",         // ✅ Tool calling supported
+                "gpt-4",               // ✅ Tool calling supported
+                "gpt-3.5-turbo",       // ✅ Tool calling supported
+                "gpt-3.5-turbo-16k"    // ✅ Tool calling supported
             ]
         case .claude:
             return [
-                "claude-3-5-sonnet-20241022",
-                "claude-3-5-haiku-20241022",
-                "claude-3-opus-20240229",
-                "claude-3-sonnet-20240229",
-                "claude-3-haiku-20240307"
+                "claude-3-5-sonnet-20241022",  // ✅ Tool calling supported
+                "claude-3-5-haiku-20241022",   // ✅ Tool calling supported
+                "claude-3-opus-20240229",      // ✅ Tool calling supported
+                "claude-3-sonnet-20240229",    // ✅ Tool calling supported
+                "claude-3-haiku-20240307"      // ✅ Tool calling supported
             ]
         }
     }
@@ -38,10 +38,16 @@ enum AIProvider: String, CaseIterable, Codable {
     var defaultModel: String {
         switch self {
         case .openai:
-            return "gpt-3.5-turbo"
+            return "gpt-4o-mini"  // Default to a model with tool calling support
         case .claude:
-            return "claude-3-haiku-20240307"
+            return "claude-3-5-haiku-20241022"  // Default to newest model with tool calling
         }
+    }
+    
+    /// Check if the current model supports tool calling
+    var supportsToolCalling: Bool {
+        // All current models in availableModels support tool calling
+        return availableModels.contains(where: { $0 == defaultModel })
     }
 }
 
@@ -102,11 +108,16 @@ class ChatViewModel: ObservableObject {
     @Published var currentMessage: String = ""
     @Published var isLoading: Bool = false
     @Published var apiConfiguration: APIConfiguration = APIConfiguration()
+    @Published var showMCPDetails: Bool = false
     
     private let aiService = AIService()
-    private let mcpAIService = SimpleMCPAIService()
+    private let mcpAIService = MCPAIService()
     private let userDefaults = UserDefaults.standard
     private let configKey = "APIConfiguration"
+    
+    var mcpManager: MCPManager {
+        return mcpAIService.mcpManager
+    }
     
     init() {
         loadConfiguration()
@@ -145,7 +156,9 @@ class ChatViewModel: ObservableObject {
         do {
             let response: String
             if apiConfiguration.enableMCP {
-                response = try await mcpAIService.sendMessage(messageToSend, configuration: apiConfiguration)
+                // Get recent conversation history for context (last 5 messages)
+                let recentHistory = messages.suffix(5).map { $0.content }
+                response = try await mcpAIService.sendMessage(messageToSend, conversationHistory: Array(recentHistory), configuration: apiConfiguration)
             } else {
                 response = try await aiService.sendMessage(messageToSend, configuration: apiConfiguration)
             }

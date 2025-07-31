@@ -40,6 +40,13 @@ struct ChatView: View {
                 
                 Divider()
                 
+                // MCP Evaluation Details
+                if chatViewModel.apiConfiguration.enableMCP && chatViewModel.showMCPDetails {
+                    MCPEvaluationDetailsView(mcpManager: chatViewModel.mcpManager)
+                        .padding(.horizontal)
+                    Divider()
+                }
+                
                 ChatInputView(
                     chatViewModel: chatViewModel,
                     voiceInputManager: voiceInputManager
@@ -50,9 +57,19 @@ struct ChatView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     if chatViewModel.apiConfiguration.enableMCP {
-                        Label("Calendar", systemImage: "calendar")
-                            .font(.caption2)
-                            .foregroundColor(.blue)
+                        HStack {
+                            Label("MCP", systemImage: "gearshape.2")
+                                .font(.caption2)
+                                .foregroundColor(.blue)
+                            
+                            Button(action: {
+                                chatViewModel.showMCPDetails.toggle()
+                            }) {
+                                Image(systemName: chatViewModel.showMCPDetails ? "eye.slash" : "eye")
+                                    .font(.caption2)
+                                    .foregroundColor(.blue)
+                            }
+                        }
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -96,17 +113,39 @@ struct MessageBubble: View {
                         .foregroundColor(message.isUser ? .white : .primary)
                         .cornerRadius(16)
                     
-                    // Show calendar icon for successful calendar events
-                    if !message.isUser && message.content.contains("✅") && message.content.contains("calendar event") {
-                        HStack {
-                            Image(systemName: "calendar.badge.plus")
-                                .font(.caption2)
-                                .foregroundColor(.green)
-                            Text("Calendar event created")
-                                .font(.caption2)
-                                .foregroundColor(.green)
+                    // Show calendar icons for various calendar operations
+                    if !message.isUser {
+                        if message.content.contains("✅") && message.content.contains("calendar event") {
+                            HStack {
+                                Image(systemName: "calendar.badge.plus")
+                                    .font(.caption2)
+                                    .foregroundColor(.green)
+                                Text("Calendar event created")
+                                    .font(.caption2)
+                                    .foregroundColor(.green)
+                            }
+                            .padding(.horizontal, 4)
+                        } else if message.content.contains("✅") && (message.content.contains("updated successfully") || message.content.contains("deleted successfully")) {
+                            HStack {
+                                Image(systemName: message.content.contains("updated") ? "calendar.badge.checkmark" : "calendar.badge.minus")
+                                    .font(.caption2)
+                                    .foregroundColor(.green)
+                                Text(message.content.contains("updated") ? "Event updated" : "Event deleted")
+                                    .font(.caption2)
+                                    .foregroundColor(.green)
+                            }
+                            .padding(.horizontal, 4)
+                        } else if message.content.contains("Today's events") || message.content.contains("Found") && message.content.contains("events") {
+                            HStack {
+                                Image(systemName: "calendar")
+                                    .font(.caption2)
+                                    .foregroundColor(.blue)
+                                Text("Calendar view")
+                                    .font(.caption2)
+                                    .foregroundColor(.blue)
+                            }
+                            .padding(.horizontal, 4)
                         }
-                        .padding(.horizontal, 4)
                     }
                 }
                 
@@ -133,9 +172,17 @@ struct ChatInputView: View {
             if chatViewModel.apiConfiguration.enableMCP && chatViewModel.currentMessage.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
+                        // Create actions
                         quickActionButton("📅 Create event", "Create a meeting tomorrow at 2 PM")
-                        quickActionButton("⏰ Set reminder", "Remind me about the presentation on Friday")
                         quickActionButton("📝 Schedule call", "Schedule a call with John next week")
+                        
+                        // View actions
+                        quickActionButton("📋 Today's events", "What's on my calendar today?")
+                        quickActionButton("🔮 Upcoming events", "Show me my upcoming events")
+                        
+                        // Search actions
+                        quickActionButton("🔍 Find event", "Find my dentist appointment")
+                        quickActionButton("🗑️ Cancel event", "Cancel my team meeting")
                     }
                     .padding(.horizontal)
                 }
@@ -262,6 +309,132 @@ struct VoiceInputView: View {
         .cornerRadius(12)
         .shadow(radius: 5)
         .padding()
+    }
+}
+
+struct MCPEvaluationDetailsView: View {
+    @ObservedObject var mcpManager: MCPManager
+    @State private var isExpanded = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "gearshape.2.fill")
+                    .foregroundColor(.blue)
+                Text("MCP Evaluation")
+                    .font(.headline)
+                    .foregroundColor(.blue)
+                
+                Spacer()
+                
+                if !mcpManager.evaluationSteps.isEmpty {
+                    Button(action: {
+                        isExpanded.toggle()
+                    }) {
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .foregroundColor(.blue)
+                    }
+                }
+            }
+            
+            // Summary stats
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Servers")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("\(mcpManager.availableServers.count)")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Steps")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("\(mcpManager.evaluationSteps.count)")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Last Update")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(mcpManager.evaluationSteps.last?.timestamp ?? Date(), style: .time)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                }
+                
+                Spacer()
+            }
+            
+            // Detailed steps (expandable)
+            if isExpanded && !mcpManager.evaluationSteps.isEmpty {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(mcpManager.evaluationSteps.indices, id: \.self) { index in
+                            let step = mcpManager.evaluationSteps[index]
+                            HStack(alignment: .top, spacing: 8) {
+                                // Server indicator
+                                Circle()
+                                    .fill(serverColor(for: step.serverName))
+                                    .frame(width: 8, height: 8)
+                                    .padding(.top, 4)
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack {
+                                        Text(step.serverName)
+                                            .font(.caption)
+                                            .fontWeight(.medium)
+                                            .foregroundColor(serverColor(for: step.serverName))
+                                        
+                                        Text("•")
+                                            .foregroundColor(.secondary)
+                                        
+                                        Text(step.step)
+                                            .font(.caption)
+                                            .foregroundColor(.primary)
+                                        
+                                        Spacer()
+                                        
+                                        Text(step.timestamp, style: .time)
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    
+                                    if !step.details.isEmpty {
+                                        Text(step.details)
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(3)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
+                .frame(maxHeight: 200)
+                .background(Color.gray.opacity(0.05))
+                .cornerRadius(8)
+            }
+        }
+        .padding(12)
+        .background(Color.blue.opacity(0.05))
+        .cornerRadius(12)
+    }
+    
+    private func serverColor(for serverName: String) -> Color {
+        switch serverName {
+        case "calendar":
+            return .green
+        case "System":
+            return .blue
+        default:
+            return .orange
+        }
     }
 }
 
