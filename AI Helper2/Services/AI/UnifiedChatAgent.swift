@@ -222,30 +222,25 @@ class UnifiedChatAgent: ObservableObject {
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
-        
-        // Custom encoding for OpenAI request
-        let requestData = try encodeOpenAIRequest(request)
-        urlRequest.httpBody = requestData
-        
+        urlRequest.httpBody = try APIRequestEncoder.encodeOpenAIRequest(request)
+
         logger.debug("📤 UNIFIED: Sending OpenAI request")
-        
+
         let (data, response) = try await URLSession.shared.data(for: urlRequest)
-        
+
         guard let httpResponse = response as? HTTPURLResponse else {
             throw UnifiedChatError.invalidResponse("Invalid HTTP response")
         }
-        
+
         guard 200...299 ~= httpResponse.statusCode else {
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
             throw UnifiedChatError.apiError("OpenAI API error (\(httpResponse.statusCode)): \(errorMessage)")
         }
-        
+
         logger.debug("📥 UNIFIED: Received OpenAI response")
-        
-        let decoder = JSONDecoder()
-        return try decoder.decode(OpenAIResponse.self, from: data)
+        return try JSONDecoder().decode(OpenAIResponse.self, from: data)
     }
-    
+
     private func makeClaudeRequest(request: ClaudeRequest, configuration: APIConfiguration) async throws -> ClaudeResponse {
         let url = URL(string: "\(configuration.provider.baseURL)/messages")!
         var urlRequest = URLRequest(url: url)
@@ -253,152 +248,25 @@ class UnifiedChatAgent: ObservableObject {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue(configuration.apiKey, forHTTPHeaderField: "x-api-key")
         urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        
-        // Custom encoding for Claude request
-        let requestData = try encodeClaudeRequest(request)
-        urlRequest.httpBody = requestData
-        
+        urlRequest.httpBody = try APIRequestEncoder.encodeClaudeRequest(request)
+
         logger.debug("📤 UNIFIED: Sending Claude request")
-        
+
         let (data, response) = try await URLSession.shared.data(for: urlRequest)
-        
+
         guard let httpResponse = response as? HTTPURLResponse else {
             throw UnifiedChatError.invalidResponse("Invalid HTTP response")
         }
-        
+
         guard 200...299 ~= httpResponse.statusCode else {
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
             throw UnifiedChatError.apiError("Claude API error (\(httpResponse.statusCode)): \(errorMessage)")
         }
-        
+
         logger.debug("📥 UNIFIED: Received Claude response")
-        
-        let decoder = JSONDecoder()
-        return try decoder.decode(ClaudeResponse.self, from: data)
+        return try JSONDecoder().decode(ClaudeResponse.self, from: data)
     }
     
-    // MARK: - Custom Encoding Helpers
-    
-    private func encodeOpenAIRequest(_ request: OpenAIRequest) throws -> Data {
-        var requestDict: [String: Any] = [
-            "model": request.model,
-            "messages": try encodeOpenAIMessages(request.messages),
-            "max_tokens": request.max_tokens,
-            "temperature": request.temperature
-        ]
-        
-        if let tools = request.tools {
-            requestDict["tools"] = try encodeOpenAITools(tools)
-        }
-        
-        if let toolChoice = request.tool_choice {
-            requestDict["tool_choice"] = toolChoice
-        }
-        
-        return try JSONSerialization.data(withJSONObject: requestDict)
-    }
-    
-    private func encodeOpenAIMessages(_ messages: [OpenAIMessage]) throws -> [[String: Any]] {
-        return messages.map { message in
-            var messageDict: [String: Any] = ["role": message.role]
-            
-            if let content = message.content {
-                messageDict["content"] = content
-            }
-            
-            if let toolCalls = message.tool_calls {
-                messageDict["tool_calls"] = toolCalls.map { toolCall in
-                    [
-                        "id": toolCall.id,
-                        "type": toolCall.type,
-                        "function": [
-                            "name": toolCall.function.name,
-                            "arguments": toolCall.function.arguments
-                        ]
-                    ]
-                }
-            }
-            
-            if let toolCallId = message.tool_call_id {
-                messageDict["tool_call_id"] = toolCallId
-            }
-            
-            return messageDict
-        }
-    }
-    
-    private func encodeOpenAITools(_ tools: [OpenAITool]) throws -> [[String: Any]] {
-        return tools.map { tool in
-            [
-                "type": tool.type,
-                "function": [
-                    "name": tool.function.name,
-                    "description": tool.function.description,
-                    "parameters": tool.function.parameters
-                ]
-            ]
-        }
-    }
-    
-    private func encodeClaudeRequest(_ request: ClaudeRequest) throws -> Data {
-        var requestDict: [String: Any] = [
-            "model": request.model,
-            "max_tokens": request.max_tokens,
-            "temperature": request.temperature,
-            "messages": try encodeClaudeMessages(request.messages)
-        ]
-        
-        if let tools = request.tools {
-            requestDict["tools"] = try encodeClaudeTools(tools)
-        }
-        
-        return try JSONSerialization.data(withJSONObject: requestDict)
-    }
-    
-    private func encodeClaudeMessages(_ messages: [ClaudeMessage]) throws -> [[String: Any]] {
-        return messages.map { message in
-            [
-                "role": message.role,
-                "content": message.content.map { content in
-                    var contentDict: [String: Any] = ["type": content.type]
-                    
-                    if let text = content.text {
-                        contentDict["text"] = text
-                    }
-                    
-                    if let toolUse = content.tool_use {
-                        contentDict["id"] = toolUse.id
-                        contentDict["name"] = toolUse.name
-                        contentDict["input"] = toolUse.input
-                    }
-                    
-                    if let toolUseId = content.tool_use_id {
-                        contentDict["tool_use_id"] = toolUseId
-                    }
-                    
-                    if let resultContent = content.content {
-                        contentDict["content"] = resultContent
-                    }
-                    
-                    if let isError = content.is_error {
-                        contentDict["is_error"] = isError
-                    }
-                    
-                    return contentDict
-                }
-            ]
-        }
-    }
-    
-    private func encodeClaudeTools(_ tools: [ClaudeTool]) throws -> [[String: Any]] {
-        return tools.map { tool in
-            [
-                "name": tool.name,
-                "description": tool.description,
-                "input_schema": tool.input_schema
-            ]
-        }
-    }
 }
 
 // MARK: - Error Types
@@ -919,32 +787,28 @@ class ReasonActOrchestrator {
         return try await toolHandler(toolCall.id, toolCall.name, toolCall.arguments)
     }
     
-    // Duplicate API methods from UnifiedChatAgent for orchestrator use
     private func makeOpenAIRequest(request: OpenAIRequest, configuration: APIConfiguration) async throws -> OpenAIResponse {
         let url = URL(string: "\(configuration.provider.baseURL)/chat/completions")!
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
-        
-        let requestData = try encodeOpenAIRequest(request)
-        urlRequest.httpBody = requestData
-        
+        urlRequest.httpBody = try APIRequestEncoder.encodeOpenAIRequest(request)
+
         let (data, response) = try await URLSession.shared.data(for: urlRequest)
-        
+
         guard let httpResponse = response as? HTTPURLResponse else {
             throw UnifiedChatError.invalidResponse("Invalid HTTP response")
         }
-        
+
         guard 200...299 ~= httpResponse.statusCode else {
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
             throw UnifiedChatError.apiError("OpenAI API error (\(httpResponse.statusCode)): \(errorMessage)")
         }
-        
-        let decoder = JSONDecoder()
-        return try decoder.decode(OpenAIResponse.self, from: data)
+
+        return try JSONDecoder().decode(OpenAIResponse.self, from: data)
     }
-    
+
     private func makeClaudeRequest(request: ClaudeRequest, configuration: APIConfiguration) async throws -> ClaudeResponse {
         let url = URL(string: "\(configuration.provider.baseURL)/messages")!
         var urlRequest = URLRequest(url: url)
@@ -952,143 +816,19 @@ class ReasonActOrchestrator {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue(configuration.apiKey, forHTTPHeaderField: "x-api-key")
         urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        
-        let requestData = try encodeClaudeRequest(request)
-        urlRequest.httpBody = requestData
-        
+        urlRequest.httpBody = try APIRequestEncoder.encodeClaudeRequest(request)
+
         let (data, response) = try await URLSession.shared.data(for: urlRequest)
-        
+
         guard let httpResponse = response as? HTTPURLResponse else {
             throw UnifiedChatError.invalidResponse("Invalid HTTP response")
         }
-        
+
         guard 200...299 ~= httpResponse.statusCode else {
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
             throw UnifiedChatError.apiError("Claude API error (\(httpResponse.statusCode)): \(errorMessage)")
         }
-        
-        let decoder = JSONDecoder()
-        return try decoder.decode(ClaudeResponse.self, from: data)
-    }
-    
-    private func encodeOpenAIRequest(_ request: OpenAIRequest) throws -> Data {
-        var requestDict: [String: Any] = [
-            "model": request.model,
-            "messages": try encodeOpenAIMessages(request.messages),
-            "max_tokens": request.max_tokens,
-            "temperature": request.temperature
-        ]
-        
-        if let tools = request.tools {
-            requestDict["tools"] = try encodeOpenAITools(tools)
-        }
-        
-        if let toolChoice = request.tool_choice {
-            requestDict["tool_choice"] = toolChoice
-        }
-        
-        return try JSONSerialization.data(withJSONObject: requestDict)
-    }
-    
-    private func encodeClaudeRequest(_ request: ClaudeRequest) throws -> Data {
-        var requestDict: [String: Any] = [
-            "model": request.model,
-            "max_tokens": request.max_tokens,
-            "temperature": request.temperature,
-            "messages": try encodeClaudeMessages(request.messages)
-        ]
-        
-        if let tools = request.tools {
-            requestDict["tools"] = try encodeClaudeTools(tools)
-        }
-        
-        return try JSONSerialization.data(withJSONObject: requestDict)
-    }
-    
-    private func encodeOpenAIMessages(_ messages: [OpenAIMessage]) throws -> [[String: Any]] {
-        return messages.map { message in
-            var messageDict: [String: Any] = ["role": message.role]
-            
-            if let content = message.content {
-                messageDict["content"] = content
-            }
-            
-            if let toolCalls = message.tool_calls {
-                messageDict["tool_calls"] = toolCalls.map { toolCall in
-                    [
-                        "id": toolCall.id,
-                        "type": toolCall.type,
-                        "function": [
-                            "name": toolCall.function.name,
-                            "arguments": toolCall.function.arguments
-                        ]
-                    ]
-                }
-            }
-            
-            if let toolCallId = message.tool_call_id {
-                messageDict["tool_call_id"] = toolCallId
-            }
-            
-            return messageDict
-        }
-    }
-    
-    private func encodeClaudeMessages(_ messages: [ClaudeMessage]) throws -> [[String: Any]] {
-        return messages.map { message in
-            [
-                "role": message.role,
-                "content": message.content.map { content in
-                    var contentDict: [String: Any] = ["type": content.type]
-                    
-                    if let text = content.text {
-                        contentDict["text"] = text
-                    }
-                    
-                    if let toolUse = content.tool_use {
-                        contentDict["id"] = toolUse.id
-                        contentDict["name"] = toolUse.name
-                        contentDict["input"] = toolUse.input
-                    }
-                    
-                    if let toolUseId = content.tool_use_id {
-                        contentDict["tool_use_id"] = toolUseId
-                    }
-                    
-                    if let resultContent = content.content {
-                        contentDict["content"] = resultContent
-                    }
-                    
-                    if let isError = content.is_error {
-                        contentDict["is_error"] = isError
-                    }
-                    
-                    return contentDict
-                }
-            ]
-        }
-    }
-    
-    private func encodeOpenAITools(_ tools: [OpenAITool]) throws -> [[String: Any]] {
-        return tools.map { tool in
-            [
-                "type": tool.type,
-                "function": [
-                    "name": tool.function.name,
-                    "description": tool.function.description,
-                    "parameters": tool.function.parameters
-                ]
-            ]
-        }
-    }
-    
-    private func encodeClaudeTools(_ tools: [ClaudeTool]) throws -> [[String: Any]] {
-        return tools.map { tool in
-            [
-                "name": tool.name,
-                "description": tool.description,
-                "input_schema": tool.input_schema
-            ]
-        }
+
+        return try JSONDecoder().decode(ClaudeResponse.self, from: data)
     }
 }

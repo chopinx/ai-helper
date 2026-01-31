@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 enum AIProvider: String, CaseIterable, Codable {
     case openai = "OpenAI"
@@ -125,7 +126,7 @@ enum PromptCategory: String, CaseIterable, Codable {
     case creative = "创意写作"
     case analysis = "数据分析"
     case learning = "学习助手"
-    
+
     var color: String {
         switch self {
         case .calendar: return "blue"
@@ -133,6 +134,16 @@ enum PromptCategory: String, CaseIterable, Codable {
         case .creative: return "purple"
         case .analysis: return "orange"
         case .learning: return "red"
+        }
+    }
+
+    var swiftColor: SwiftUI.Color {
+        switch self {
+        case .calendar: return .blue
+        case .productivity: return .green
+        case .creative: return .purple
+        case .analysis: return .orange
+        case .learning: return .red
         }
     }
 }
@@ -628,12 +639,7 @@ class ChatViewModel: ObservableObject {
     var shouldShowSuggestedPrompts: Bool {
         return messages.isEmpty && showSuggestedPrompts
     }
-    
-    /// Clean final response marker from text for UI display
-    func cleanedMessageContent(_ content: String) -> String {
-        return content.replacingOccurrences(of: "<|FINAL_RESPONSE|>", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-    
+
     /// Toggle multi-role conversation mode
     func toggleMultiRoleMode() {
         useMultiRole.toggle()
@@ -723,18 +729,18 @@ enum ProcessingStatus: Equatable {
         switch self {
         case .idle, .completed, .error:
             return false
-        default:
+        case .loadingTools, .thinkingStep, .callingTool, .processingToolResult, .generatingResponse:
             return true
         }
     }
 
     var stepNumber: Int? {
-        if case .thinkingStep(let step) = self { return step }
-        return nil
+        guard case .thinkingStep(let step) = self else { return nil }
+        return step
     }
 
     var isError: Bool {
-        if case .error = self { return true }
-        return false
+        guard case .error = self else { return false }
+        return true
     }
 }

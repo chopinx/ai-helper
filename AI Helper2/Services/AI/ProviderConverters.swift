@@ -638,3 +638,130 @@ struct ClaudeUsage: Codable {
     let input_tokens: Int
     let output_tokens: Int
 }
+
+// MARK: - API Request Encoder
+
+/// Shared encoder for API requests to avoid code duplication
+enum APIRequestEncoder {
+
+    static func encodeOpenAIRequest(_ request: OpenAIRequest) throws -> Data {
+        var requestDict: [String: Any] = [
+            "model": request.model,
+            "messages": encodeOpenAIMessages(request.messages),
+            "max_tokens": request.max_tokens,
+            "temperature": request.temperature
+        ]
+
+        if let tools = request.tools {
+            requestDict["tools"] = encodeOpenAITools(tools)
+        }
+
+        if let toolChoice = request.tool_choice {
+            requestDict["tool_choice"] = toolChoice
+        }
+
+        return try JSONSerialization.data(withJSONObject: requestDict)
+    }
+
+    static func encodeClaudeRequest(_ request: ClaudeRequest) throws -> Data {
+        var requestDict: [String: Any] = [
+            "model": request.model,
+            "max_tokens": request.max_tokens,
+            "temperature": request.temperature,
+            "messages": encodeClaudeMessages(request.messages)
+        ]
+
+        if let tools = request.tools {
+            requestDict["tools"] = encodeClaudeTools(tools)
+        }
+
+        return try JSONSerialization.data(withJSONObject: requestDict)
+    }
+
+    static func encodeOpenAIMessages(_ messages: [OpenAIMessage]) -> [[String: Any]] {
+        return messages.map { message in
+            var messageDict: [String: Any] = ["role": message.role]
+
+            if let content = message.content {
+                messageDict["content"] = content
+            }
+
+            if let toolCalls = message.tool_calls {
+                messageDict["tool_calls"] = toolCalls.map { toolCall in
+                    [
+                        "id": toolCall.id,
+                        "type": toolCall.type,
+                        "function": [
+                            "name": toolCall.function.name,
+                            "arguments": toolCall.function.arguments
+                        ]
+                    ]
+                }
+            }
+
+            if let toolCallId = message.tool_call_id {
+                messageDict["tool_call_id"] = toolCallId
+            }
+
+            return messageDict
+        }
+    }
+
+    static func encodeClaudeMessages(_ messages: [ClaudeMessage]) -> [[String: Any]] {
+        return messages.map { message in
+            [
+                "role": message.role,
+                "content": message.content.map { content in
+                    var contentDict: [String: Any] = ["type": content.type]
+
+                    if let text = content.text {
+                        contentDict["text"] = text
+                    }
+
+                    if let toolUse = content.tool_use {
+                        contentDict["id"] = toolUse.id
+                        contentDict["name"] = toolUse.name
+                        contentDict["input"] = toolUse.input
+                    }
+
+                    if let toolUseId = content.tool_use_id {
+                        contentDict["tool_use_id"] = toolUseId
+                    }
+
+                    if let resultContent = content.content {
+                        contentDict["content"] = resultContent
+                    }
+
+                    if let isError = content.is_error {
+                        contentDict["is_error"] = isError
+                    }
+
+                    return contentDict
+                }
+            ]
+        }
+    }
+
+    static func encodeOpenAITools(_ tools: [OpenAITool]) -> [[String: Any]] {
+        return tools.map { tool in
+            [
+                "type": tool.type,
+                "function": [
+                    "name": tool.function.name,
+                    "description": tool.function.description,
+                    "parameters": tool.function.parameters
+                ]
+            ]
+        }
+    }
+
+    static func encodeClaudeTools(_ tools: [ClaudeTool]) -> [[String: Any]] {
+        return tools.map { tool in
+            [
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.input_schema
+            ]
+        }
+    }
+}

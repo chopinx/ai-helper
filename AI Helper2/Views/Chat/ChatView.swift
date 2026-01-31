@@ -387,21 +387,21 @@ struct CategoryView: View {
     let category: PromptCategory
     let prompts: [SuggestedPrompt]
     let onPromptTap: (SuggestedPrompt) -> Void
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Category Header
             HStack(spacing: 6) {
                 Circle()
-                    .fill(categoryColor)
+                    .fill(category.swiftColor)
                     .frame(width: 8, height: 8)
-                
+
                 Text(category.rawValue)
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
             }
-            
+
             // Prompts in Category
             VStack(spacing: 6) {
                 ForEach(prompts) { prompt in
@@ -414,17 +414,6 @@ struct CategoryView: View {
         .cornerRadius(8)
         .shadow(radius: 1)
         .frame(width: 200)
-    }
-    
-    private var categoryColor: Color {
-        switch category.color {
-        case "blue": return .blue
-        case "green": return .green
-        case "purple": return .purple
-        case "orange": return .orange
-        case "red": return .red
-        default: return .gray
-        }
     }
 }
 
