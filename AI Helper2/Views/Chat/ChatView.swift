@@ -70,6 +70,10 @@ struct ChatView: View {
         .onAppear {
             // Setup voice input if needed
             voiceInputManager.requestPermissions()
+            voiceInputManager.apiKey = chatViewModel.apiConfiguration.apiKey
+        }
+        .onChange(of: chatViewModel.apiConfiguration.apiKey) {
+            voiceInputManager.apiKey = chatViewModel.apiConfiguration.apiKey
         }
     }
     
