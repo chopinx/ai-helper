@@ -143,20 +143,24 @@ class ChatViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var apiConfiguration: APIConfiguration = APIConfiguration()
     @Published var showMCPDetails: Bool = false
-    @Published var useUnifiedAgent: Bool = true 
+    @Published var useUnifiedAgent: Bool = true
     @Published var useMultiRole: Bool = false // New: Toggle for multi-role conversation
-    
+
     @Published var reasonActSteps: [ReasonActStep] = []
     @Published var isReasonActMode: Bool = true
     @Published var showSuggestedPrompts: Bool = true
     @Published var suggestedPrompts: [SuggestedPrompt] = []
-    
+
     private let aiService = AIService()
     private let mcpAIService = MCPAIService()
-    @Published var unifiedChatAgent = UnifiedChatAgent() 
+    @Published var unifiedChatAgent = UnifiedChatAgent()
     @Published var multiRoleOrchestrator: MultiRoleOrchestrator? // New: Multi-role orchestrator
     private let userDefaults = UserDefaults.standard
     private let configKey = "APIConfiguration"
+
+    // Persistence
+    private var currentConversationID: UUID?
+    private let persistence = PersistenceController.shared
     
     var mcpManager: MCPManager {
         return mcpAIService.mcpManager
@@ -164,9 +168,35 @@ class ChatViewModel: ObservableObject {
     
     init() {
         loadConfiguration()
+        loadPersistedConversation()
         setupUnifiedAgent()
         setupMultiRoleOrchestrator()
         setupSuggestedPrompts()
+    }
+
+    // MARK: - Conversation Persistence
+
+    private func loadPersistedConversation() {
+        if let (id, messages) = persistence.loadMostRecentConversation(), !messages.isEmpty {
+            self.currentConversationID = id
+            self.messages = messages
+            self.showSuggestedPrompts = false
+        } else {
+            self.currentConversationID = persistence.createNewConversation()
+        }
+    }
+
+    private func saveCurrentConversation() {
+        guard let conversationID = currentConversationID else { return }
+        persistence.saveConversation(id: conversationID, messages: messages)
+    }
+
+    func startNewConversation() {
+        currentConversationID = persistence.createNewConversation()
+        messages.removeAll()
+        reasonActSteps.removeAll()
+        unifiedChatAgent.clearConversation()
+        showSuggestedPrompts = true
     }
     
     private func setupUnifiedAgent() {
@@ -228,6 +258,7 @@ class ChatViewModel: ObservableObject {
             messages.append(userMessage)
             isLoading = true
             showSuggestedPrompts = false
+            saveCurrentConversation()
         }
         
         let messageToSend = currentMessage
@@ -293,16 +324,18 @@ class ChatViewModel: ObservableObject {
             }
             
             let aiMessage = ChatMessage(content: response, isUser: false)
-            
+
             await MainActor.run {
                 messages.append(aiMessage)
                 isLoading = false
+                saveCurrentConversation()
             }
         } catch {
             let errorMessage = ChatMessage(content: "Error: \(error.localizedDescription)", isUser: false)
             await MainActor.run {
                 messages.append(errorMessage)
                 isLoading = false
+                saveCurrentConversation()
             }
         }
     }
@@ -377,12 +410,9 @@ class ChatViewModel: ObservableObject {
         reasonActSteps.removeAll()
     }
     
-    /// Clear conversation and reset state
+    /// Clear conversation and reset state (creates new conversation)
     func clearConversation() {
-        messages.removeAll()
-        reasonActSteps.removeAll()
-        unifiedChatAgent.clearConversation()
-        showSuggestedPrompts = true
+        startNewConversation()
     }
     
     /// Setup suggested prompts for first-time users
