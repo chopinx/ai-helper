@@ -30,7 +30,7 @@ xcodebuild -project "AI Helper2.xcodeproj" -scheme "AI Helper2" -destination "pl
 - [ ] Code simplified (no unnecessary complexity)
 - [ ] No compiler warnings
 - [ ] No hardcoded secrets/API keys
-- [ ] Changes documented (if significant)
+- [ ] Docs aligned (CLAUDE.md, README match code)
 
 **Full checklist**: See `docs/ITERATION_CHECKLIST.md` for comprehensive review.
 

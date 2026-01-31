@@ -13,6 +13,7 @@
 | 3 | No warnings | Check build output for warnings | [ ] |
 | 4 | Code simplified | Review for unnecessary complexity | [ ] |
 | 5 | No secrets | No API keys or credentials in code | [ ] |
+| 6 | Docs aligned | CLAUDE.md, README match code changes | [ ] |
 
 ---
 
@@ -81,6 +82,14 @@
 | 2 | MARK comments | [x] |
 | 3 | No TODOs in main | [ ] |
 | 4 | Public APIs documented | [ ] |
+
+### Documentation
+| # | Check | Status |
+|---|-------|--------|
+| 1 | CLAUDE.md matches code | [ ] |
+| 2 | README.md current | [ ] |
+| 3 | PRD updated if scope changed | [ ] |
+| 4 | New files/dirs documented | [ ] |
 
 ---
 
@@ -158,9 +167,10 @@
 
 | Category | Done | Total |
 |----------|------|-------|
+| Pre-Push | 0 | 6 |
 | Features - AI | 0 | 6 |
 | Features - MCP | 1 | 6 |
 | Features - Input | 3 | 4 |
-| Code Quality | 4 | 16 |
+| Code Quality | 4 | 20 |
 | UX | 4 | 18 |
-| **Total** | **12** | **50** |
+| **Total** | **12** | **60** |
