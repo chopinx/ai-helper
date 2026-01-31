@@ -152,6 +152,12 @@ class ChatViewModel: ObservableObject {
     @Published var showSuggestedPrompts: Bool = true
     @Published var suggestedPrompts: [SuggestedPrompt] = []
 
+    // Progress tracking for user feedback
+    @Published var currentStatus: ProcessingStatus = .idle
+    @Published var currentStepNumber: Int = 0
+    @Published var currentToolName: String = ""
+    @Published var availableToolsCount: Int = 0
+
     private let aiService = AIService()
     private let mcpAIService = MCPAIService()
     private let streamingService = StreamingService()
@@ -253,93 +259,126 @@ class ChatViewModel: ObservableObject {
     func sendMessage() async {
         guard !currentMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !apiConfiguration.apiKey.isEmpty else { return }
-        
+
         let userMessage = ChatMessage(content: currentMessage, isUser: true)
-        
+
         await MainActor.run {
             messages.append(userMessage)
             isLoading = true
             showSuggestedPrompts = false
+            currentStatus = .loadingTools
+            currentStepNumber = 0
+            currentToolName = ""
             saveCurrentConversation()
         }
-        
+
         let messageToSend = currentMessage
-        
+
         await MainActor.run {
             currentMessage = ""
         }
-        
+
         do {
             let response: String
-            
+
             if useMultiRole && apiConfiguration.enableMCP {
                 // Use multi-role conversation system
                 guard let orchestrator = multiRoleOrchestrator else {
                     throw ChatError.orchestratorUnavailable
                 }
-                
+
                 await orchestrator.startConversation(goal: messageToSend)
-                
+
                 // Extract final response from orchestrator state
                 if let lastMessage = orchestrator.state.messages.last {
                     response = lastMessage
                 } else {
                     response = "Multi-role conversation completed but no final response was generated."
                 }
-                
+
             } else if useUnifiedAgent && apiConfiguration.enableMCP {
                 // Use unified chat agent with MCP tools
-                let availableTools = await getAvailableTools() 
+                await updateStatus(.loadingTools)
+                let availableTools = await getAvailableTools()
+                await MainActor.run { self.availableToolsCount = availableTools.count }
+
                 let uniResponse: UniMsg
-                
+
                 // Clear previous steps when starting new request
                 await MainActor.run { self.reasonActSteps.removeAll() }
-                
+
                 if isReasonActMode {
-                    // Use Reason-Act orchestrator
+                    // Use Reason-Act orchestrator with status callbacks
                     let (finalResponse, steps) = try await unifiedChatAgent.processWithOrchestrator(
                         messageToSend,
                         configuration: apiConfiguration,
                         availableTools: availableTools,
-                        maxSteps: 6
+                        maxSteps: 6,
+                        onStatusUpdate: { [weak self] status in
+                            Task { @MainActor in
+                                self?.currentStatus = status
+                                if case .thinkingStep(let step) = status {
+                                    self?.currentStepNumber = step
+                                }
+                                if case .callingTool(let tool) = status {
+                                    self?.currentToolName = tool
+                                }
+                            }
+                        },
+                        onStepComplete: { [weak self] step in
+                            Task { @MainActor in
+                                self?.reasonActSteps.append(step)
+                            }
+                        }
                     )
-                    
-                    await MainActor.run {
-                        self.reasonActSteps = steps
-                    }
-                    
+
                     uniResponse = finalResponse
                 } else {
                     // Use single-step mode
+                    await updateStatus(.generatingResponse)
                     uniResponse = try await unifiedChatAgent.sendMessage(messageToSend, configuration: apiConfiguration, availableTools: availableTools)
                 }
                 response = uniResponse.textContent
-                
+
             } else if apiConfiguration.enableMCP {
                 // Use original MCP system
+                await updateStatus(.generatingResponse)
                 let recentHistory = messages.suffix(5).map { $0.content }
                 response = try await mcpAIService.sendMessage(messageToSend, conversationHistory: Array(recentHistory), configuration: apiConfiguration)
-                
+
             } else {
                 // Use basic AI service
+                await updateStatus(.generatingResponse)
                 response = try await aiService.sendMessage(messageToSend, configuration: apiConfiguration)
             }
-            
+
             let aiMessage = ChatMessage(content: response, isUser: false)
 
             await MainActor.run {
                 messages.append(aiMessage)
                 isLoading = false
+                currentStatus = .completed
                 saveCurrentConversation()
             }
+
+            // Reset status after brief delay
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            await updateStatus(.idle)
+
         } catch {
             let errorMessage = ChatMessage(content: "Error: \(error.localizedDescription)", isUser: false)
             await MainActor.run {
                 messages.append(errorMessage)
                 isLoading = false
+                currentStatus = .error(error.localizedDescription)
                 saveCurrentConversation()
             }
         }
+    }
+
+    @MainActor
+    private func updateStatus(_ status: ProcessingStatus) {
+        currentStatus = status
     }
 
     /// Send message with streaming response
@@ -630,13 +669,77 @@ class ChatViewModel: ObservableObject {
 enum ChatError: LocalizedError {
     case orchestratorUnavailable
     case invalidConfiguration
-    
+
     var errorDescription: String? {
         switch self {
         case .orchestratorUnavailable:
             return "Multi-role orchestrator is not available"
         case .invalidConfiguration:
             return "Invalid configuration"
+        }
+    }
+}
+
+// MARK: - Processing Status
+
+enum ProcessingStatus: Equatable {
+    case idle
+    case loadingTools
+    case thinkingStep(Int)
+    case callingTool(String)
+    case processingToolResult(String)
+    case generatingResponse
+    case completed
+    case error(String)
+
+    var displayText: String {
+        switch self {
+        case .idle:
+            return ""
+        case .loadingTools:
+            return "Loading available tools..."
+        case .thinkingStep(let step):
+            return "Thinking (Step \(step))..."
+        case .callingTool(let toolName):
+            return "Calling \(toolName)..."
+        case .processingToolResult(let toolName):
+            return "Processing \(toolName) result..."
+        case .generatingResponse:
+            return "Generating response..."
+        case .completed:
+            return "Done"
+        case .error(let message):
+            return "Error: \(message)"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .idle:
+            return ""
+        case .loadingTools:
+            return "wrench.and.screwdriver"
+        case .thinkingStep:
+            return "brain"
+        case .callingTool:
+            return "hammer"
+        case .processingToolResult:
+            return "gearshape"
+        case .generatingResponse:
+            return "text.bubble"
+        case .completed:
+            return "checkmark.circle"
+        case .error:
+            return "exclamationmark.triangle"
+        }
+    }
+
+    var isActive: Bool {
+        switch self {
+        case .idle, .completed, .error:
+            return false
+        default:
+            return true
         }
     }
 }

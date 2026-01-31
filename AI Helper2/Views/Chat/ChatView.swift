@@ -100,14 +100,14 @@ struct ChatView: View {
                                 .opacity(0.8)
                         }
 
+                        // Show processing status
                         if chatViewModel.isLoading {
-                            HStack {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                                Text("AI is thinking...")
-                                    .foregroundColor(.secondary)
-                                    .font(.caption)
-                            }
+                            ProcessingStatusView(
+                                status: chatViewModel.currentStatus,
+                                stepNumber: chatViewModel.currentStepNumber,
+                                toolName: chatViewModel.currentToolName,
+                                toolsCount: chatViewModel.availableToolsCount
+                            )
                             .padding(.horizontal)
                         }
                     }
@@ -142,6 +142,101 @@ struct ChatView: View {
                     }
                 }
             )
+        }
+    }
+}
+
+// MARK: - Processing Status View
+
+struct ProcessingStatusView: View {
+    let status: ProcessingStatus
+    let stepNumber: Int
+    let toolName: String
+    let toolsCount: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Main status with icon and progress
+            HStack(spacing: 10) {
+                // Animated icon
+                if status.isActive {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else {
+                    Image(systemName: status.icon)
+                        .foregroundColor(statusColor)
+                        .font(.body)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(status.displayText)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+
+                    // Additional context
+                    if case .loadingTools = status {
+                        Text("Preparing \(toolsCount) tools")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    } else if case .thinkingStep = status {
+                        Text("Step \(stepNumber) of 6")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    } else if case .callingTool = status {
+                        Text("Executing tool action")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                // Step indicator badge
+                if stepNumber > 0 && status.isActive {
+                    Text("\(stepNumber)/6")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.blue)
+                        .cornerRadius(10)
+                }
+            }
+
+            // Progress bar for multi-step processing
+            if status.isActive && stepNumber > 0 {
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .frame(height: 4)
+                            .cornerRadius(2)
+
+                        Rectangle()
+                            .fill(Color.blue)
+                            .frame(width: geometry.size.width * CGFloat(stepNumber) / 6.0, height: 4)
+                            .cornerRadius(2)
+                            .animation(.easeInOut(duration: 0.3), value: stepNumber)
+                    }
+                }
+                .frame(height: 4)
+            }
+        }
+        .padding(12)
+        .background(Color(.systemGray6))
+        .cornerRadius(10)
+    }
+
+    private var statusColor: Color {
+        switch status {
+        case .completed:
+            return .green
+        case .error:
+            return .red
+        default:
+            return .blue
         }
     }
 }

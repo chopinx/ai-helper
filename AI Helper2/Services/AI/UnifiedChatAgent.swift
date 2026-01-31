@@ -28,15 +28,29 @@ class UnifiedChatAgent: ObservableObject {
     }
     
     /// Multi-step orchestrator with Reason-Act loop
-    func processWithOrchestrator(_ message: String, configuration: APIConfiguration, availableTools: [UniTool] = [], maxSteps: Int = 6) async throws -> (UniMsg, [ReasonActStep]) {
+    func processWithOrchestrator(
+        _ message: String,
+        configuration: APIConfiguration,
+        availableTools: [UniTool] = [],
+        maxSteps: Int = 6,
+        onStatusUpdate: ((ProcessingStatus) -> Void)? = nil,
+        onStepComplete: ((ReasonActStep) -> Void)? = nil
+    ) async throws -> (UniMsg, [ReasonActStep]) {
         let orchestrator = ReasonActOrchestrator(
             contextManager: contextManager,
             toolHandler: toolHandler,
             openAIConverter: openAIConverter,
             claudeConverter: claudeConverter
         )
-        
-        return try await orchestrator.process(message: message, configuration: configuration, availableTools: availableTools, maxSteps: maxSteps)
+
+        return try await orchestrator.process(
+            message: message,
+            configuration: configuration,
+            availableTools: availableTools,
+            maxSteps: maxSteps,
+            onStatusUpdate: onStatusUpdate,
+            onStepComplete: onStepComplete
+        )
     }
     
     /// Send a message and get response from configured AI provider
@@ -691,7 +705,14 @@ class ReasonActOrchestrator {
         self.claudeConverter = claudeConverter
     }
     
-    func process(message: String, configuration: APIConfiguration, availableTools: [UniTool], maxSteps: Int) async throws -> (UniMsg, [ReasonActStep]) {
+    func process(
+        message: String,
+        configuration: APIConfiguration,
+        availableTools: [UniTool],
+        maxSteps: Int,
+        onStatusUpdate: ((ProcessingStatus) -> Void)? = nil,
+        onStepComplete: ((ReasonActStep) -> Void)? = nil
+    ) async throws -> (UniMsg, [ReasonActStep]) {
         logger.info("🔄 Starting Reason-Act loop with maxSteps: \(maxSteps)")
         
         // Add system instructions for Reason-Act loop
@@ -727,48 +748,60 @@ class ReasonActOrchestrator {
         while stepCount < maxSteps {
             stepCount += 1
             logger.info("🔄 Starting Reason-Act step \(stepCount)/\(maxSteps)")
-            
+
+            // Update status: thinking
+            onStatusUpdate?(.thinkingStep(stepCount))
+
             do {
                 // Get current context for the provider
                 let currentMessages = contextManager.currentMessages(provider: configuration.provider)
                 logger.debug("📝 Context messages count: \(currentMessages.count)")
-                
+
                 // Call LLM
                 logger.info("🤖 Calling \(configuration.provider.rawValue) API for step \(stepCount)")
                 let response = try await callLLM(messages: currentMessages, tools: availableTools, configuration: configuration)
                 contextManager.addMessage(response)
-                
+
                 let responseText = response.textContent
                 logger.debug("💬 Response text length: \(responseText.count) chars")
                 if !responseText.isEmpty {
                     logger.debug("💭 Response preview: \(String(responseText.prefix(100)))...")
                 }
-                
+
                 // Check if response contains final response marker
                 if responseText.contains(FINAL_RESPONSE_MARKER) {
                     // Final response - clean the marker and end the loop
+                    onStatusUpdate?(.generatingResponse)
                     let cleanedText = responseText.replacingOccurrences(of: FINAL_RESPONSE_MARKER, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
                     let finalResponse = UniMsg(role: .assistant, text: cleanedText)
                     logger.info("✅ Reason-Act completed with final response marker at step \(stepCount)")
                     logger.info("📋 Final response length: \(cleanedText.count) chars")
+                    onStatusUpdate?(.completed)
                     return (finalResponse, steps)
                 }
-                
+
                 // Check if response contains tool calls
                 let toolCalls = response.toolCalls
                 logger.info("🔧 Found \(toolCalls.count) tool calls in step \(stepCount)")
-                
+
                 // Execute tool calls
                 var toolResults: [UniMsg.ToolResult] = []
                 var stepToolCalls: [ReasonActStep.ToolExecution] = []
-                
+
                 for toolCall in toolCalls {
                     let startTime = Date()
-                    
+
+                    // Update status: calling tool
+                    onStatusUpdate?(.callingTool(toolCall.name))
+
                     do {
                         let result = try await executeToolCall(toolCall)
+
+                        // Update status: processing result
+                        onStatusUpdate?(.processingToolResult(toolCall.name))
+
                         toolResults.append(result)
-                        
+
                         stepToolCalls.append(ReasonActStep.ToolExecution(
                             toolName: toolCall.name,
                             arguments: toolCall.arguments,
@@ -776,13 +809,13 @@ class ReasonActOrchestrator {
                             isError: result.isError,
                             duration: Date().timeIntervalSince(startTime)
                         ))
-                        
+
                         // Reset consecutive errors on success
                         if !result.isError {
                             consecutiveErrors = 0
                             lastError = nil
                         }
-                        
+
                     } catch {
                         let errorResult = UniMsg.ToolResult(
                             toolCallId: toolCall.id,
@@ -790,7 +823,7 @@ class ReasonActOrchestrator {
                             isError: true
                         )
                         toolResults.append(errorResult)
-                        
+
                         stepToolCalls.append(ReasonActStep.ToolExecution(
                             toolName: toolCall.name,
                             arguments: toolCall.arguments,
@@ -798,7 +831,7 @@ class ReasonActOrchestrator {
                             isError: true,
                             duration: Date().timeIntervalSince(startTime)
                         ))
-                        
+
                         // Track consecutive errors
                         if lastError == error.localizedDescription {
                             consecutiveErrors += 1
@@ -806,29 +839,33 @@ class ReasonActOrchestrator {
                             consecutiveErrors = 1
                             lastError = error.localizedDescription
                         }
-                        
+
                         // Stop if same error occurs twice in a row
                         if consecutiveErrors >= 2 {
                             logger.error("❌ Stopping Reason-Act loop due to consecutive errors: \(error.localizedDescription)")
+                            onStatusUpdate?(.error(error.localizedDescription))
                             throw ReasonActError.consecutiveErrors(error.localizedDescription)
                         }
                     }
                 }
-                
+
                 // Add tool results to context
                 if !toolResults.isEmpty {
                     contextManager.addToolResults(toolResults)
                 }
-                
-                // Record step
-                steps.append(ReasonActStep(
+
+                // Record step and notify
+                let step = ReasonActStep(
                     stepNumber: stepCount,
                     assistantMessage: response.textContent,
                     toolExecutions: stepToolCalls
-                ))
-                
+                )
+                steps.append(step)
+                onStepComplete?(step)
+
             } catch {
                 logger.error("❌ Reason-Act step \(stepCount) failed: \(error.localizedDescription)")
+                onStatusUpdate?(.error(error.localizedDescription))
                 throw error
             }
         }
