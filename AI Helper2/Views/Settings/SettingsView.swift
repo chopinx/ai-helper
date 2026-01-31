@@ -31,7 +31,7 @@ struct SettingsView: View {
                         }
                     }
                     .pickerStyle(SegmentedPickerStyle())
-                    .onChange(of: configuration.provider) { newProvider in
+                    .onChange(of: configuration.provider) { _, newProvider in
                         // Reset to default model when provider changes
                         configuration.model = newProvider.defaultModel
                     }

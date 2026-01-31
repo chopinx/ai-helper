@@ -34,10 +34,20 @@ class VoiceInputManager: NSObject, ObservableObject {
             }
         }
         
-        AVAudioSession.sharedInstance().requestRecordPermission { [weak self] granted in
-            DispatchQueue.main.async {
-                if !granted {
-                    self?.hasPermissions = false
+        if #available(iOS 17.0, *) {
+            AVAudioApplication.requestRecordPermission { [weak self] granted in
+                DispatchQueue.main.async {
+                    if !granted {
+                        self?.hasPermissions = false
+                    }
+                }
+            }
+        } else {
+            AVAudioSession.sharedInstance().requestRecordPermission { [weak self] granted in
+                DispatchQueue.main.async {
+                    if !granted {
+                        self?.hasPermissions = false
+                    }
                 }
             }
         }

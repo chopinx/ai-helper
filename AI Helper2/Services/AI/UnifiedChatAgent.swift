@@ -195,7 +195,7 @@ class UnifiedChatAgent: ObservableObject {
             conversation.addToolResults(toolResults)
             
             // Continue conversation with tool results
-            let followUpResponse = try await processWithProvider(configuration: configuration)
+            _ = try await processWithProvider(configuration: configuration)
             logger.info("🔄 UNIFIED: Follow-up response after tool execution completed")
         }
     }
@@ -209,7 +209,6 @@ class UnifiedChatAgent: ObservableObject {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
         
-        let encoder = JSONEncoder()
         // Custom encoding for OpenAI request
         let requestData = try encodeOpenAIRequest(request)
         urlRequest.httpBody = requestData
@@ -241,7 +240,6 @@ class UnifiedChatAgent: ObservableObject {
         urlRequest.setValue(configuration.apiKey, forHTTPHeaderField: "x-api-key")
         urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         
-        let encoder = JSONEncoder()
         // Custom encoding for Claude request
         let requestData = try encodeClaudeRequest(request)
         urlRequest.httpBody = requestData
@@ -555,7 +553,8 @@ class MultiRoleOrchestrator: ObservableObject {
     
     private func buildRolePrompt(for role: ConversationRole) async -> String {
         var toolCatalog = ""
-        if let tools = try? await mcpManager.getAllAPITools() {
+        let tools = await mcpManager.getAllAPITools()
+        if !tools.isEmpty {
             toolCatalog = tools.map { tool in
                 "- \(tool.name): \(tool.description)"
             }.joined(separator: "\n")

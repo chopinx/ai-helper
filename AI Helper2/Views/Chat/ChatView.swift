@@ -103,14 +103,14 @@ struct ChatView: View {
                     }
                     .padding()
                 }
-                .onChange(of: chatViewModel.messages.count) { _ in
+                .onChange(of: chatViewModel.messages.count) {
                     withAnimation {
                         if let lastMessage = chatViewModel.messages.last {
                             proxy.scrollTo(lastMessage.id, anchor: .bottom)
                         }
                     }
                 }
-                .onChange(of: chatViewModel.reasonActSteps.count) { _ in
+                .onChange(of: chatViewModel.reasonActSteps.count) {
                     // Auto-scroll when final summary arrives
                     if !chatViewModel.isLoading {
                         withAnimation {
