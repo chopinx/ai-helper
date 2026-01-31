@@ -145,6 +145,7 @@ class ChatViewModel: ObservableObject {
     @Published var showMCPDetails: Bool = false
     @Published var useUnifiedAgent: Bool = true
     @Published var useMultiRole: Bool = false // New: Toggle for multi-role conversation
+    @Published var streamingText: String = "" // Streaming response text
 
     @Published var reasonActSteps: [ReasonActStep] = []
     @Published var isReasonActMode: Bool = true
@@ -153,6 +154,7 @@ class ChatViewModel: ObservableObject {
 
     private let aiService = AIService()
     private let mcpAIService = MCPAIService()
+    private let streamingService = StreamingService()
     @Published var unifiedChatAgent = UnifiedChatAgent()
     @Published var multiRoleOrchestrator: MultiRoleOrchestrator? // New: Multi-role orchestrator
     private let userDefaults = UserDefaults.standard
@@ -339,7 +341,69 @@ class ChatViewModel: ObservableObject {
             }
         }
     }
-    
+
+    /// Send message with streaming response
+    func sendMessageStreaming() {
+        guard !currentMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !apiConfiguration.apiKey.isEmpty else { return }
+
+        let userMessage = ChatMessage(content: currentMessage, isUser: true)
+        messages.append(userMessage)
+        isLoading = true
+        streamingText = ""
+        showSuggestedPrompts = false
+        saveCurrentConversation()
+
+        let messageToSend = currentMessage
+        currentMessage = ""
+
+        // Build messages array for API
+        let apiMessages: [[String: Any]] = messages.map { msg in
+            ["role": msg.isUser ? "user" : "assistant", "content": msg.content]
+        }
+
+        let onChunk: (String) -> Void = { [weak self] chunk in
+            self?.streamingText += chunk
+        }
+
+        let onComplete: (Result<Void, Error>) -> Void = { [weak self] result in
+            guard let self = self else { return }
+
+            switch result {
+            case .success:
+                if !self.streamingText.isEmpty {
+                    let aiMessage = ChatMessage(content: self.streamingText, isUser: false)
+                    self.messages.append(aiMessage)
+                    self.saveCurrentConversation()
+                }
+            case .failure(let error):
+                let errorMessage = ChatMessage(content: "Error: \(error.localizedDescription)", isUser: false)
+                self.messages.append(errorMessage)
+                self.saveCurrentConversation()
+            }
+
+            self.streamingText = ""
+            self.isLoading = false
+        }
+
+        switch apiConfiguration.provider {
+        case .openai:
+            streamingService.streamOpenAI(
+                messages: apiMessages,
+                configuration: apiConfiguration,
+                onChunk: onChunk,
+                onComplete: onComplete
+            )
+        case .claude:
+            streamingService.streamClaude(
+                messages: apiMessages,
+                configuration: apiConfiguration,
+                onChunk: onChunk,
+                onComplete: onComplete
+            )
+        }
+    }
+
     /// Get available MCP tools as unified tool descriptors
     private func getAvailableTools() async -> [UniTool] {
         var tools: [UniTool] = []

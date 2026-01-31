@@ -93,7 +93,13 @@ struct ChatView: View {
                             MessageBubble(message: message)
                                 .id(message.id)
                         }
-                        
+
+                        // Show streaming text while loading
+                        if chatViewModel.isLoading && !chatViewModel.streamingText.isEmpty {
+                            MessageBubble(message: ChatMessage(content: chatViewModel.streamingText, isUser: false))
+                                .opacity(0.8)
+                        }
+
                         if chatViewModel.isLoading {
                             HStack {
                                 ProgressView()
