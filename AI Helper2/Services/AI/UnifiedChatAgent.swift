@@ -476,15 +476,17 @@ extension UniTool {
 class MultiRoleOrchestrator: ObservableObject {
     @Published private(set) var state: MultiRoleState
     @Published private(set) var isProcessing = false
-    
+
     private let aiService: AIService
-    private let mcpManager: SimpleMCPManager
+    private let mcpManager: MCPManager
     private let maxIterations: Int
     private let logger = Logger(subsystem: "com.aihelper.multirole", category: "MultiRoleOrchestrator")
-    
-    init(aiService: AIService, mcpManager: SimpleMCPManager, maxIterations: Int = 10) {
+    var configuration: APIConfiguration
+
+    init(aiService: AIService, mcpManager: MCPManager, configuration: APIConfiguration, maxIterations: Int = 10) {
         self.aiService = aiService
         self.mcpManager = mcpManager
+        self.configuration = configuration
         self.maxIterations = maxIterations
         self.state = MultiRoleState(goal: "")
     }
@@ -510,10 +512,10 @@ class MultiRoleOrchestrator: ObservableObject {
             
             logger.info("🎭 Role: \(currentRole.rawValue) (iteration \(iterations + 1))")
             
-            let rolePrompt = buildRolePrompt(for: currentRole)
+            let rolePrompt = await buildRolePrompt(for: currentRole)
             
             do {
-                let response = try await aiService.sendMessageWithoutContext(rolePrompt)
+                let response = try await aiService.sendMessageWithoutContext(rolePrompt, configuration: configuration)
                 let roleResponse = try parseRoleResponse(response)
                 
                 await MainActor.run {
@@ -551,10 +553,13 @@ class MultiRoleOrchestrator: ObservableObject {
         }
     }
     
-    private func buildRolePrompt(for role: ConversationRole) -> String {
-        let toolCatalog = mcpManager.getAllTools().map { tool in
-            "- \(tool.name): \(tool.description)"
-        }.joined(separator: "\n")
+    private func buildRolePrompt(for role: ConversationRole) async -> String {
+        var toolCatalog = ""
+        if let tools = try? await mcpManager.getAllAPITools() {
+            toolCatalog = tools.map { tool in
+                "- \(tool.name): \(tool.description)"
+            }.joined(separator: "\n")
+        }
         
         let recentMessages = state.messages.suffix(3).joined(separator: "\n")
         let recentObservations = state.observations.suffix(3).map { obs in
@@ -621,7 +626,7 @@ class MultiRoleOrchestrator: ObservableObject {
             
             do {
                 let args = convertAnyCodableDict(action.args)
-                let result = try await mcpManager.callTool(action.name, arguments: args)
+                let result = try await mcpManager.executeToolCall(toolName: action.name, arguments: args)
                 
                 let observation = ToolObservation(
                     tool: action.name,

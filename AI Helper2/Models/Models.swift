@@ -195,11 +195,12 @@ class ChatViewModel: ObservableObject {
     }
     
     private func setupMultiRoleOrchestrator() {
-        guard let mcpManager = mcpAIService.mcpManager as? SimpleMCPManager else { return }
+        guard let mcpManager = mcpAIService.mcpManager as? MCPManager else { return }
         
         multiRoleOrchestrator = MultiRoleOrchestrator(
             aiService: aiService,
             mcpManager: mcpManager,
+            configuration: apiConfiguration,
             maxIterations: 8
         )
     }
