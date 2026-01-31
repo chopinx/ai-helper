@@ -3,7 +3,13 @@ import SwiftUI
 struct SettingsView: View {
     @Binding var configuration: APIConfiguration
     @Environment(\.dismiss) private var dismiss
-    
+
+    // API Key Validation
+    @State private var isValidating = false
+    @State private var validationResult: APIKeyValidationResult?
+    @State private var showValidationAlert = false
+    private let validator = APIKeyValidator()
+
     var body: some View {
         NavigationView {
             Form {
@@ -40,7 +46,34 @@ struct SettingsView: View {
                 Section(header: Text("API Configuration")) {
                     SecureField("API Key", text: $configuration.apiKey)
                         .textContentType(.password)
-                    
+
+                    // Validation button and status
+                    HStack {
+                        Button {
+                            Task {
+                                await validateAPIKey()
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                if isValidating {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                } else {
+                                    Image(systemName: "checkmark.shield")
+                                }
+                                Text("Validate API Key")
+                            }
+                        }
+                        .disabled(configuration.apiKey.isEmpty || isValidating)
+
+                        Spacer()
+
+                        // Validation status icon
+                        if let result = validationResult {
+                            validationStatusIcon(for: result)
+                        }
+                    }
+
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Model")
                             .font(.caption)
@@ -52,6 +85,10 @@ struct SettingsView: View {
                         }
                         .pickerStyle(MenuPickerStyle())
                     }
+                }
+                .onChange(of: configuration.apiKey) {
+                    // Clear validation result when API key changes
+                    validationResult = nil
                 }
                 
                 Section(header: Text("Generation Parameters")) {
@@ -179,6 +216,56 @@ struct SettingsView: View {
                     }
                 }
             }
+            .alert("API Key Validation", isPresented: $showValidationAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(validationAlertMessage)
+            }
+        }
+    }
+
+    // MARK: - API Key Validation
+
+    private func validateAPIKey() async {
+        isValidating = true
+        validationResult = nil
+
+        let result = await validator.validate(apiKey: configuration.apiKey, provider: configuration.provider)
+
+        await MainActor.run {
+            validationResult = result
+            isValidating = false
+            showValidationAlert = true
+        }
+    }
+
+    @ViewBuilder
+    private func validationStatusIcon(for result: APIKeyValidationResult) -> some View {
+        switch result {
+        case .valid:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundColor(.green)
+        case .invalid:
+            Image(systemName: "xmark.circle.fill")
+                .foregroundColor(.red)
+        case .networkError:
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.orange)
+        }
+    }
+
+    private var validationAlertMessage: String {
+        guard let result = validationResult else {
+            return ""
+        }
+
+        switch result {
+        case .valid:
+            return "Your \(configuration.provider.rawValue) API key is valid."
+        case .invalid(let message):
+            return "Invalid API key: \(message)"
+        case .networkError(let message):
+            return "Network error: \(message)"
         }
     }
 }
