@@ -4,7 +4,37 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI Helper2 is an iOS chatbot app supporting OpenAI and Claude APIs with voice input. Built with SwiftUI following MVVM architecture.
+AI Helper2 is an iOS chatbot app supporting OpenAI and Claude APIs with voice input and MCP (Model Context Protocol) integrations. Built with SwiftUI following MVVM architecture.
+
+**Key Documentation**:
+- `docs/plans/2026-01-31-ai-helper-prd.md` - Product roadmap and improvement plans
+- `docs/ITERATION_CHECKLIST.md` - Quality checklist for each iteration
+
+---
+
+## IMPORTANT: Pre-Push Checklist
+
+**Before every push, verify these items pass:**
+
+```bash
+# 1. Build succeeds
+xcodebuild -project "AI Helper2.xcodeproj" -scheme "AI Helper2" -sdk iphonesimulator build
+
+# 2. Tests pass
+xcodebuild -project "AI Helper2.xcodeproj" -scheme "AI Helper2" -destination "platform=iOS Simulator,name=iPhone 16" test
+```
+
+**Manual checks before push:**
+- [ ] Build succeeds (no errors)
+- [ ] Tests pass (all green)
+- [ ] Code simplified (no unnecessary complexity)
+- [ ] No compiler warnings
+- [ ] No hardcoded secrets/API keys
+- [ ] Changes documented (if significant)
+
+**Full checklist**: See `docs/ITERATION_CHECKLIST.md` for comprehensive review.
+
+---
 
 ## Build and Development Commands
 
@@ -13,180 +43,187 @@ AI Helper2 is an iOS chatbot app supporting OpenAI and Claude APIs with voice in
 # Build the project
 xcodebuild -project "AI Helper2.xcodeproj" -scheme "AI Helper2" -sdk iphonesimulator build
 
-# Build and run on specific simulator
+# Build for specific simulator
 xcodebuild -project "AI Helper2.xcodeproj" -scheme "AI Helper2" -destination "platform=iOS Simulator,name=iPhone 16" build
 
 # Clean build
 xcodebuild -project "AI Helper2.xcodeproj" -scheme "AI Helper2" clean
+
+# Clean and rebuild
+xcodebuild -project "AI Helper2.xcodeproj" -scheme "AI Helper2" clean build
 ```
 
 ### Testing
 ```bash
 # Run all tests
-xcodebuild -project "AI Helper2.xcodeproj" -scheme "AI Helper2" test
+xcodebuild -project "AI Helper2.xcodeproj" -scheme "AI Helper2" -destination "platform=iOS Simulator,name=iPhone 16" test
 
 # Run specific test target
-xcodebuild -project "AI Helper2.xcodeproj" -scheme "AI Helper2Tests" test
+xcodebuild -project "AI Helper2.xcodeproj" -scheme "AI Helper2Tests" -destination "platform=iOS Simulator,name=iPhone 16" test
 ```
 
-### Required Privacy Permissions
-Must add these to target's Info.plist settings in Xcode (not a separate file):
-- `NSMicrophoneUsageDescription`: "We need microphone to record your voice input."
-- `NSSpeechRecognitionUsageDescription`: "We need speech recognition to convert your voice input into text for creating calendar events."
-- `NSCalendarsUsageDescription`: "We need calendar access to create events via AI assistant."
+### Code Quality
+```bash
+# Check for warnings (build and capture output)
+xcodebuild -project "AI Helper2.xcodeproj" -scheme "AI Helper2" -sdk iphonesimulator build 2>&1 | grep -i warning
+
+# Format Swift files (if swiftformat installed)
+swiftformat "AI Helper2" --config .swiftformat
+```
+
+---
 
 ## Project Structure
 
-The project follows a clean, organized folder structure for better maintainability:
-
 ```
 AI Helper2/
-├── App/                          # Application entry point
-│   ├── AI_Helper2App.swift      # SwiftUI App entry point
-│   └── ContentView.swift        # Root content view
-├── Views/                        # UI Components by feature
-│   ├── Chat/ChatView.swift      # Chat interface with MCP integration
+├── App/                           # Application entry point
+│   ├── AI_Helper2App.swift        # SwiftUI App entry point
+│   └── ContentView.swift          # Root content view
+├── Views/                         # UI Components
+│   ├── Chat/ChatView.swift        # Main chat UI + Reason-Act timeline
 │   └── Settings/SettingsView.swift # Configuration UI
-├── Models/                       # Data models and ViewModels
-│   └── Models.swift             # Core models (ChatMessage, APIConfiguration, etc.)
-├── Services/                     # Business logic and integrations
-│   ├── AI/                      # AI service implementations
-│   │   ├── AIService.swift      # Base AI service
-│   │   └── SimpleMCPAIService.swift # MCP-enhanced AI service
-│   ├── MCP/                     # Model Context Protocol
-│   │   ├── SimpleMCPProtocol.swift # MCP protocol definitions
-│   │   └── SimpleCalendarMCPServer.swift # Calendar integration
-│   └── Voice/VoiceInputManager.swift # Speech recognition
-└── Resources/Assets.xcassets     # Visual assets
+├── Models/                        # Data models
+│   ├── Models.swift               # Core models, ChatViewModel
+│   └── ReasonActModels.swift      # Reason-Act step tracking
+├── Services/
+│   ├── AI/                        # AI service implementations
+│   │   ├── AIService.swift        # Base AI service with tool calling
+│   │   ├── MCPAIService.swift     # MCP-enhanced AI service
+│   │   ├── UnifiedChatAgent.swift # Cross-provider agent + orchestration
+│   │   ├── ContextManager.swift   # Conversation context management
+│   │   ├── ProviderConverters.swift # OpenAI/Claude format converters
+│   │   └── UnifiedChatModels.swift # Unified message models
+│   ├── MCP/                       # Model Context Protocol
+│   │   ├── MCPProtocol.swift      # MCP protocol + manager
+│   │   └── CalendarMCPServer.swift # Calendar integration (7 tools)
+│   └── Voice/
+│       └── VoiceInputManager.swift # Speech-to-text
+├── Resources/Assets.xcassets      # Visual assets
+└── docs/                          # Documentation
+    ├── ITERATION_CHECKLIST.md     # Quality checklist
+    └── plans/                     # PRDs and design docs
 ```
+
+---
 
 ## Architecture Overview
 
-### Core Data Flow
-1. **ChatView** → **ChatViewModel** → **SimpleMCPAIService** (if MCP enabled) → AI API
-2. **SimpleCalendarMCPServer** → EventKit → iOS Calendar
-3. **VoiceInputManager** → Speech-to-text → **ChatViewModel**
-4. **SettingsView** → **APIConfiguration** → UserDefaults persistence
+### Core Components
 
-### Key Components
+| Component | File | Purpose |
+|-----------|------|---------|
+| **ChatViewModel** | Models/Models.swift | Central state coordinator |
+| **UnifiedChatAgent** | Services/AI/UnifiedChatAgent.swift | Cross-provider AI with Reason-Act loop |
+| **MCPManager** | Services/MCP/MCPProtocol.swift | MCP server registry and tool execution |
+| **CalendarMCPServer** | Services/MCP/CalendarMCPServer.swift | Calendar tools (7 operations) |
 
-**Models/Models.swift** - Central data layer:
-- `AIProvider` enum with `availableModels` arrays for OpenAI/Claude
-- `APIConfiguration` struct with provider, apiKey, model, maxTokens, temperature, enableMCP
-- `ChatViewModel` ObservableObject managing state and MCP integration
-- `MaxTokensOption` enum for preset token limits
+### Data Flow
+```
+User Input → ChatViewModel → UnifiedChatAgent → AI Provider API
+                                    ↓
+                              Tool Calls → MCPManager → MCP Servers → iOS Frameworks
+                                    ↓
+                              Response → ChatViewModel → ChatView
+```
 
-**Services/AI/AIService.swift** - Base AI API abstraction with context:
-- `sendMessage()` automatically adds current date/time context to all messages
-- `sendMessageWithoutContext()` for internal system prompts that already have context
-- `addCommonContext()` generates comprehensive context (date, time, timezone, device, locale)
-- `sendOpenAIMessage()` - uses chat/completions endpoint with Bearer auth
-- `sendClaudeMessage()` - uses messages endpoint with x-api-key header
-
-**Services/AI/SimpleMCPAIService.swift** - Enhanced AI with MCP:
-- Detects calendar requests in natural language
-- Uses AI to extract event details (title, date, time, duration)
-- Creates calendar events via MCP server
-- Falls back to regular AI for non-calendar requests
-
-**Services/MCP/SimpleMCPProtocol.swift** - MCP framework:
-- `SimpleMCPServer` protocol for tool integrations
-- `SimpleMCPManager` for server coordination
-- Basic MCP data structures for tool definitions
-
-**Services/MCP/SimpleCalendarMCPServer.swift** - Calendar MCP server:
-- EventKit integration with iOS 17+ permission handling
-- `create_event` tool for calendar event creation
-- Proper error handling and permission management
-
-**Views/Chat/ChatView.swift** - Main UI with MCP features:
-- Message bubbles with calendar event indicators
-- MCP status indicator in navigation bar
-- Quick action buttons for common calendar tasks
-- Voice input integration
-
-**Services/Voice/VoiceInputManager.swift** - Speech integration:
-- Manages AVAudioSession and SFSpeechRecognizer
-- Real-time transcription with permission handling
-
-**Views/Settings/SettingsView.swift** - Configuration UI:
-- Provider picker (segmented control)
-- Model dropdown (MenuPickerStyle) - auto-updates on provider change
-- Max tokens dropdown with preset options
-- Temperature slider with labels
-- Calendar integration toggle with status indicator
-
-### Provider-Specific Details
+### Provider Configuration
 
 **OpenAI**:
 - Endpoint: `https://api.openai.com/v1/chat/completions`
-- Auth: `Bearer {apiKey}` header  
-- Models: gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-4, gpt-3.5-turbo, gpt-3.5-turbo-16k
+- Auth: `Bearer {apiKey}` header
+- Models: gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-4, gpt-3.5-turbo
 
 **Claude**:
 - Endpoint: `https://api.anthropic.com/v1/messages`
 - Auth: `x-api-key: {apiKey}` header
-- Version: `anthropic-version: 2023-06-01` header
-- Models: claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022, claude-3-opus-20240229, etc.
+- Version: `anthropic-version: 2023-06-01`
+- Models: claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022, claude-3-opus-20240229
+
+---
 
 ## Development Patterns
 
 ### State Management
-- Use `@StateObject` for view models, `@ObservedObject` for passed objects
-- `ChatViewModel` is central coordinator, created in ChatView
-- Settings persist via JSON encoding to UserDefaults
-
-### UI Conventions  
-- SwiftUI with Navigation-based hierarchy
-- Settings presented as sheet from toolbar button
-- Custom view components (MessageBubble, VoiceInputView) for reusability
-- Dropdown pickers use MenuPickerStyle for better UX
+- `@StateObject` for view models created in view
+- `@ObservedObject` for passed objects
+- `@Published` for observable properties
+- UserDefaults for settings persistence
 
 ### Error Handling
-- `AIServiceError` enum for service failures
-- User-friendly error messages displayed as AI responses
-- Permission checks before enabling voice features
+- Custom error enums conforming to `LocalizedError`
+- Errors logged with `os.log` Logger
+- User-friendly messages shown in chat
+
+### MCP Server Pattern
+```swift
+class NewMCPServer: MCPServer {
+    func initialize() async throws { /* Setup */ }
+    func listTools() async throws -> [MCPTool] { /* Tool definitions */ }
+    func callTool(name: String, arguments: [String: Any]) async throws -> MCPResult { /* Execute */ }
+    func canHandle(message: String, ...) async -> MCPCapabilityResult { /* AI evaluation */ }
+    func getServerName() -> String { /* Display name */ }
+    func getServerDescription() -> String { /* Description */ }
+}
+```
+
+---
 
 ## Common Tasks
 
-### Adding AI Providers
-1. Add case to `AIProvider` enum in `Models/Models.swift` with baseURL and availableModels
+### Adding New MCP Server
+1. Create `Services/MCP/NewMCPServer.swift` implementing `MCPServer`
+2. Define tools in `listTools()`
+3. Implement tool execution in `callTool()`
+4. Register in `MCPManager` or `ChatViewModel.setupUnifiedAgent()`
+5. Add required privacy permissions to Info.plist
+
+### Adding AI Provider
+1. Add case to `AIProvider` enum in `Models/Models.swift`
 2. Implement provider method in `Services/AI/AIService.swift`
-3. Settings UI in `Views/Settings/SettingsView.swift` will automatically include new provider
-
-### Adding New MCP Integrations
-1. Create new server class in `Services/MCP/` implementing `SimpleMCPServer`
-2. Register server in `SimpleMCPManager` within `Services/MCP/SimpleMCPProtocol.swift`
-3. Update `Services/AI/SimpleMCPAIService.swift` to handle new tool requests
-4. Add UI indicators in `Views/Chat/ChatView.swift` and `Views/Settings/SettingsView.swift`
-
-### Voice Feature Testing
-- Requires physical device (simulator microphone is limited)  
-- Check permissions in `Services/Voice/VoiceInputManager.swift`
-- Audio session management in startRecording/stopRecording methods
+3. Add converter in `Services/AI/ProviderConverters.swift`
 
 ### Modifying Chat UI
-- Message components in `Views/Chat/ChatView.swift`
-- Quick action buttons can be added to `ChatInputView`
-- Calendar event indicators in `MessageBubble` component
+1. Message display: `MessageBubble` in `ChatView.swift`
+2. Input area: `ChatInputView` in `ChatView.swift`
+3. Reason-Act timeline: `ReasonActTimelineView` in `ChatView.swift`
 
-### Settings and Configuration
-- Model dropdowns auto-populate from `provider.availableModels` in `Models/Models.swift`
-- Provider changes trigger `.onChange` to reset model selection
-- Max tokens uses enum with display names for user clarity
-- MCP toggle affects which AI service is used (`AIService` vs `SimpleMCPAIService`)
+---
 
-### Calendar Integration Development
-- Calendar server in `Services/MCP/SimpleCalendarMCPServer.swift`
-- EventKit permissions handled automatically for iOS 17+
-- Add new calendar tools by extending the `listTools()` method
-- Natural language parsing in `Services/AI/SimpleMCPAIService.swift`
+## Required Privacy Permissions
 
-## Project Structure Notes
+Add to target's Info.plist settings in Xcode:
 
-- Clean folder organization by feature and responsibility
-- Modern Xcode project format (no manual Info.plist file)
-- Privacy permissions configured in target settings, not separate plist
-- No external dependencies - uses system frameworks only (EventKit, Speech, etc.)
-- Test targets included but minimally implemented
-- All MCP functionality is self-contained in `Services/MCP/` folder
+**Current**:
+- `NSMicrophoneUsageDescription` - Voice input
+- `NSSpeechRecognitionUsageDescription` - Speech-to-text
+- `NSCalendarsUsageDescription` - Calendar access
+
+**Planned** (for future MCP servers):
+- `NSRemindersUsageDescription` - Reminders
+- `NSContactsUsageDescription` - Contacts
+- `NSHealthShareUsageDescription` - Health (read)
+- `NSHealthUpdateUsageDescription` - Health (write)
+
+---
+
+## Code Quality Standards
+
+### Before Committing
+1. **Build passes** - No compilation errors
+2. **Tests pass** - All tests green
+3. **No warnings** - Zero compiler warnings
+4. **Code simplified** - Remove unnecessary complexity
+5. **No large files** - Split files > 500 lines
+
+### Style Guidelines
+- Follow Swift API Design Guidelines
+- Use `// MARK: -` for file organization
+- Document public APIs with `///` comments
+- Use meaningful variable names (no single letters except loops)
+
+### Avoid
+- Force unwrapping (`!`) - use `guard let` or `if let`
+- Hardcoded strings - extract to constants
+- Duplicate code - extract to shared functions
+- Deep nesting - extract to helper methods
