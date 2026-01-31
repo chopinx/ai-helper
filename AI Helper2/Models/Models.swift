@@ -103,15 +103,58 @@ struct ChatMessage: Identifiable, Codable {
     }
 }
 
+struct SuggestedPrompt: Identifiable, Codable {
+    let id: UUID
+    let title: String
+    let prompt: String
+    let category: PromptCategory
+    let icon: String
+    
+    init(title: String, prompt: String, category: PromptCategory, icon: String) {
+        self.id = UUID()
+        self.title = title
+        self.prompt = prompt
+        self.category = category
+        self.icon = icon
+    }
+}
+
+enum PromptCategory: String, CaseIterable, Codable {
+    case calendar = "日程管理"
+    case productivity = "工作效率"
+    case creative = "创意写作"
+    case analysis = "数据分析"
+    case learning = "学习助手"
+    
+    var color: String {
+        switch self {
+        case .calendar: return "blue"
+        case .productivity: return "green"
+        case .creative: return "purple"
+        case .analysis: return "orange"
+        case .learning: return "red"
+        }
+    }
+}
+
 class ChatViewModel: ObservableObject {
     @Published var messages: [ChatMessage] = []
     @Published var currentMessage: String = ""
     @Published var isLoading: Bool = false
     @Published var apiConfiguration: APIConfiguration = APIConfiguration()
     @Published var showMCPDetails: Bool = false
+    @Published var useUnifiedAgent: Bool = true 
+    @Published var useMultiRole: Bool = false // New: Toggle for multi-role conversation
+    
+    @Published var reasonActSteps: [ReasonActStep] = []
+    @Published var isReasonActMode: Bool = true
+    @Published var showSuggestedPrompts: Bool = true
+    @Published var suggestedPrompts: [SuggestedPrompt] = []
     
     private let aiService = AIService()
     private let mcpAIService = MCPAIService()
+    @Published var unifiedChatAgent = UnifiedChatAgent() 
+    @Published var multiRoleOrchestrator: MultiRoleOrchestrator? // New: Multi-role orchestrator
     private let userDefaults = UserDefaults.standard
     private let configKey = "APIConfiguration"
     
@@ -121,6 +164,44 @@ class ChatViewModel: ObservableObject {
     
     init() {
         loadConfiguration()
+        setupUnifiedAgent()
+        setupMultiRoleOrchestrator()
+        setupSuggestedPrompts()
+    }
+    
+    private func setupUnifiedAgent() {
+        // Configure tool handler for unified agent
+        unifiedChatAgent.toolHandler = { [weak self] toolName, arguments in
+            guard let self = self else {
+                return UniMsg.ToolResult(toolCallId: "", content: "Service unavailable", isError: true)
+            }
+            
+            // Execute tool via MCP manager
+            do {
+                let mcpResult = try await self.mcpManager.executeToolCall(toolName: toolName, arguments: arguments)
+                return UniMsg.ToolResult(
+                    toolCallId: UUID().uuidString,
+                    content: mcpResult.message,
+                    isError: mcpResult.isError
+                )
+            } catch {
+                return UniMsg.ToolResult(
+                    toolCallId: UUID().uuidString,
+                    content: "Tool execution failed: \(error.localizedDescription)",
+                    isError: true
+                )
+            }
+        }
+    }
+    
+    private func setupMultiRoleOrchestrator() {
+        guard let mcpManager = mcpAIService.mcpManager as? SimpleMCPManager else { return }
+        
+        multiRoleOrchestrator = MultiRoleOrchestrator(
+            aiService: aiService,
+            mcpManager: mcpManager,
+            maxIterations: 8
+        )
     }
     
     func saveConfiguration() {
@@ -145,6 +226,7 @@ class ChatViewModel: ObservableObject {
         await MainActor.run {
             messages.append(userMessage)
             isLoading = true
+            showSuggestedPrompts = false
         }
         
         let messageToSend = currentMessage
@@ -155,11 +237,57 @@ class ChatViewModel: ObservableObject {
         
         do {
             let response: String
-            if apiConfiguration.enableMCP {
-                // Get recent conversation history for context (last 5 messages)
+            
+            if useMultiRole && apiConfiguration.enableMCP {
+                // Use multi-role conversation system
+                guard let orchestrator = multiRoleOrchestrator else {
+                    throw ChatError.orchestratorUnavailable
+                }
+                
+                await orchestrator.startConversation(goal: messageToSend)
+                
+                // Extract final response from orchestrator state
+                if let lastMessage = orchestrator.state.messages.last {
+                    response = lastMessage
+                } else {
+                    response = "Multi-role conversation completed but no final response was generated."
+                }
+                
+            } else if useUnifiedAgent && apiConfiguration.enableMCP {
+                // Use unified chat agent with MCP tools
+                let availableTools = await getAvailableTools() 
+                let uniResponse: UniMsg
+                
+                // Clear previous steps when starting new request
+                await MainActor.run { self.reasonActSteps.removeAll() }
+                
+                if isReasonActMode {
+                    // Use Reason-Act orchestrator
+                    let (finalResponse, steps) = try await unifiedChatAgent.processWithOrchestrator(
+                        messageToSend,
+                        configuration: apiConfiguration,
+                        availableTools: availableTools,
+                        maxSteps: 6
+                    )
+                    
+                    await MainActor.run {
+                        self.reasonActSteps = steps
+                    }
+                    
+                    uniResponse = finalResponse
+                } else {
+                    // Use single-step mode
+                    uniResponse = try await unifiedChatAgent.sendMessage(messageToSend, configuration: apiConfiguration, availableTools: availableTools)
+                }
+                response = uniResponse.textContent
+                
+            } else if apiConfiguration.enableMCP {
+                // Use original MCP system
                 let recentHistory = messages.suffix(5).map { $0.content }
                 response = try await mcpAIService.sendMessage(messageToSend, conversationHistory: Array(recentHistory), configuration: apiConfiguration)
+                
             } else {
+                // Use basic AI service
                 response = try await aiService.sendMessage(messageToSend, configuration: apiConfiguration)
             }
             
@@ -175,6 +303,245 @@ class ChatViewModel: ObservableObject {
                 messages.append(errorMessage)
                 isLoading = false
             }
+        }
+    }
+    
+    /// Get available MCP tools as unified tool descriptors
+    private func getAvailableTools() async -> [UniTool] {
+        var tools: [UniTool] = []
+        var toolNames: Set<String> = []
+        
+        // Get tools from MCP servers first (they have priority)
+        for (serverName, server) in mcpManager.availableServers {
+            do {
+                let mcpTools = try await server.listTools()
+                for mcpTool in mcpTools {
+                    // Skip if tool name already exists
+                    if toolNames.contains(mcpTool.name) {
+                        continue
+                    }
+                    
+                    let uniTool = UniTool(
+                        name: mcpTool.name,
+                        description: mcpTool.description,
+                        parameters: UniTool.ToolParameters(
+                            properties: convertMCPParameters(mcpTool.parameters),
+                            required: mcpTool.parameters.filter { $0.required }.map { $0.name }
+                        ),
+                        metadata: ["server": serverName]
+                    )
+                    tools.append(uniTool)
+                    toolNames.insert(mcpTool.name)
+                }
+            } catch {
+                // Continue if server fails to list tools
+                continue
+            }
+        }
+        
+        // Add fallback calendar tool if not provided by MCP servers
+        if mcpManager.isCalendarEnabled && !toolNames.contains("create_event") {
+            let calendarTool = UniTool.createEventTool()
+            tools.append(calendarTool)
+            toolNames.insert(calendarTool.name)
+        }
+        
+        // Add search tool if not already present
+        if !toolNames.contains("search") {
+            let searchTool = UniTool.searchTool()
+            tools.append(searchTool)
+            toolNames.insert(searchTool.name)
+        }
+        
+        return tools
+    }
+    
+    /// Convert MCP tool parameters to unified format
+    private func convertMCPParameters(_ mcpParams: [MCPParameter]) -> [String: UniTool.ParameterProperty] {
+        var properties: [String: UniTool.ParameterProperty] = [:]
+        
+        for param in mcpParams {
+            properties[param.name] = UniTool.ParameterProperty(
+                type: param.type,
+                description: param.description
+            )
+        }
+        
+        return properties
+    }
+    
+    /// Toggle between simple and reason-act modes
+    func toggleReasonActMode() {
+        isReasonActMode.toggle()
+        reasonActSteps.removeAll()
+    }
+    
+    /// Clear conversation and reset state
+    func clearConversation() {
+        messages.removeAll()
+        reasonActSteps.removeAll()
+        unifiedChatAgent.clearConversation()
+        showSuggestedPrompts = true
+    }
+    
+    /// Setup suggested prompts for first-time users
+    private func setupSuggestedPrompts() {
+        suggestedPrompts = [
+            // Calendar Management
+            SuggestedPrompt(
+                title: "创建会议",
+                prompt: "帮我安排明天下午2点的团队会议，主题是项目进展讨论，时长2小时",
+                category: .calendar,
+                icon: "calendar.badge.plus"
+            ),
+            SuggestedPrompt(
+                title: "查看日程",
+                prompt: "查看我本周的日程安排，告诉我有哪些重要的会议和任务",
+                category: .calendar,
+                icon: "calendar"
+            ),
+            SuggestedPrompt(
+                title: "设置提醒",
+                prompt: "提醒我每天上午9点开始工作，下午6点结束工作",
+                category: .calendar,
+                icon: "bell"
+            ),
+            
+            // Productivity
+            SuggestedPrompt(
+                title: "任务规划",
+                prompt: "帮我制定一个完成项目报告的详细计划，包括时间安排和具体步骤",
+                category: .productivity,
+                icon: "checklist"
+            ),
+            SuggestedPrompt(
+                title: "时间管理",
+                prompt: "分析我的工作习惯，给出提高效率的建议，特别是时间分配方面",
+                category: .productivity,
+                icon: "clock"
+            ),
+            SuggestedPrompt(
+                title: "邮件模板",
+                prompt: "帮我写一封专业的项目进展汇报邮件给客户，包含本月完成的工作和下月计划",
+                category: .productivity,
+                icon: "envelope"
+            ),
+            
+            // Creative Writing
+            SuggestedPrompt(
+                title: "创意文案",
+                prompt: "为我们公司的新产品写一份吸引人的营销文案，突出产品的创新特点",
+                category: .creative,
+                icon: "pencil.and.outline"
+            ),
+            SuggestedPrompt(
+                title: "故事创作",
+                prompt: "创作一个关于人工智能如何改变日常生活的短故事，要有趣且富有想象力",
+                category: .creative,
+                icon: "book"
+            ),
+            SuggestedPrompt(
+                title: "演讲稿",
+                prompt: "帮我准备一份关于团队合作重要性的5分钟演讲稿，包含实际案例",
+                category: .creative,
+                icon: "mic"
+            ),
+            
+            // Data Analysis
+            SuggestedPrompt(
+                title: "数据解读",
+                prompt: "分析用户反馈数据，找出产品改进的关键点和优先级",
+                category: .analysis,
+                icon: "chart.bar"
+            ),
+            SuggestedPrompt(
+                title: "趋势分析",
+                prompt: "基于市场数据分析当前行业趋势，预测未来6个月的发展方向",
+                category: .analysis,
+                icon: "chart.line.uptrend.xyaxis"
+            ),
+            SuggestedPrompt(
+                title: "报告总结",
+                prompt: "总结季度销售报告的关键指标，突出亮点和需要改进的地方",
+                category: .analysis,
+                icon: "doc.text"
+            ),
+            
+            // Learning Assistant
+            SuggestedPrompt(
+                title: "知识解释",
+                prompt: "用简单易懂的方式解释机器学习的基本概念，包含实际应用例子",
+                category: .learning,
+                icon: "brain.head.profile"
+            ),
+            SuggestedPrompt(
+                title: "学习计划",
+                prompt: "制定一个3个月的iOS开发学习计划，包括学习资源和里程碑",
+                category: .learning,
+                icon: "graduationcap"
+            ),
+            SuggestedPrompt(
+                title: "技能提升",
+                prompt: "推荐提高沟通技巧的方法和练习，适合职场环境",
+                category: .learning,
+                icon: "person.2"
+            )
+        ]
+    }
+    
+    /// Select a suggested prompt
+    func selectSuggestedPrompt(_ prompt: SuggestedPrompt) {
+        currentMessage = prompt.prompt
+        showSuggestedPrompts = false
+    }
+    
+    /// Show/hide suggested prompts
+    func toggleSuggestedPrompts() {
+        showSuggestedPrompts.toggle()
+    }
+    
+    /// Filter suggested prompts by category
+    func promptsByCategory(_ category: PromptCategory) -> [SuggestedPrompt] {
+        return suggestedPrompts.filter { $0.category == category }
+    }
+    
+    /// Should show suggested prompts (only when no messages)
+    var shouldShowSuggestedPrompts: Bool {
+        return messages.isEmpty && showSuggestedPrompts
+    }
+    
+    /// Clean final response marker from text for UI display
+    func cleanedMessageContent(_ content: String) -> String {
+        return content.replacingOccurrences(of: "<|FINAL_RESPONSE|>", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    /// Toggle multi-role conversation mode
+    func toggleMultiRoleMode() {
+        useMultiRole.toggle()
+        if useMultiRole {
+            useUnifiedAgent = false // Disable unified agent when using multi-role
+        }
+    }
+    
+    /// Toggle unified agent mode
+    func toggleUnifiedAgent() {
+        useUnifiedAgent.toggle()
+        if useUnifiedAgent {
+            useMultiRole = false // Disable multi-role when using unified agent
+        }
+    }
+}
+
+enum ChatError: LocalizedError {
+    case orchestratorUnavailable
+    case invalidConfiguration
+    
+    var errorDescription: String? {
+        switch self {
+        case .orchestratorUnavailable:
+            return "Multi-role orchestrator is not available"
+        case .invalidConfiguration:
+            return "Invalid configuration"
         }
     }
 }

@@ -4,29 +4,32 @@ import AVFoundation
 
 class VoiceInputManager: NSObject, ObservableObject {
     @Published var isRecording = false
-    @Published var recognizedText = ""
-    @Published var isAuthorized = false
+    @Published var hasPermissions = false
+    @Published var transcriptionText = ""
     
     private let audioEngine = AVAudioEngine()
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
+    private var audioSession = AVAudioSession.sharedInstance()
+    
+    private var transcriptionCompletion: ((String) -> Void)?
     
     override init() {
         super.init()
         requestPermissions()
     }
     
-    private func requestPermissions() {
+    func requestPermissions() {
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             DispatchQueue.main.async {
                 switch status {
                 case .authorized:
-                    self?.isAuthorized = true
+                    self?.hasPermissions = true
                 case .denied, .restricted, .notDetermined:
-                    self?.isAuthorized = false
+                    self?.hasPermissions = false
                 @unknown default:
-                    self?.isAuthorized = false
+                    self?.hasPermissions = false
                 }
             }
         }
@@ -34,14 +37,16 @@ class VoiceInputManager: NSObject, ObservableObject {
         AVAudioSession.sharedInstance().requestRecordPermission { [weak self] granted in
             DispatchQueue.main.async {
                 if !granted {
-                    self?.isAuthorized = false
+                    self?.hasPermissions = false
                 }
             }
         }
     }
     
-    func startRecording() {
-        guard isAuthorized, !isRecording else { return }
+    func startRecording(completion: @escaping (String) -> Void) {
+        guard hasPermissions, !isRecording else { return }
+        
+        transcriptionCompletion = completion
         
         recognitionTask?.cancel()
         recognitionTask = nil
@@ -83,12 +88,18 @@ class VoiceInputManager: NSObject, ObservableObject {
         recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             if let result = result {
                 DispatchQueue.main.async {
-                    self?.recognizedText = result.bestTranscription.formattedString
+                    self?.transcriptionText = result.bestTranscription.formattedString
                 }
             }
             
             if error != nil || result?.isFinal == true {
                 self?.stopRecording()
+                
+                if let finalText = result?.bestTranscription.formattedString, !finalText.isEmpty {
+                    DispatchQueue.main.async {
+                        self?.transcriptionCompletion?(finalText)
+                    }
+                }
             }
         }
         
@@ -105,6 +116,7 @@ class VoiceInputManager: NSObject, ObservableObject {
         recognitionRequest = nil
         recognitionTask?.cancel()
         recognitionTask = nil
+        transcriptionCompletion = nil
         
         isRecording = false
         
@@ -116,6 +128,6 @@ class VoiceInputManager: NSObject, ObservableObject {
     }
     
     func clearText() {
-        recognizedText = ""
+        transcriptionText = ""
     }
 }
