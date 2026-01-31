@@ -10,7 +10,11 @@ class MCPAIService: ObservableObject {
         // Initialize calendar integration
         let calendarServer = CalendarMCPServer()
         mcpManager.enableCalendarIntegration(calendarServer)
-        
+
+        // Initialize reminders integration
+        let remindersServer = RemindersMCPServer()
+        mcpManager.registerServer(remindersServer, name: "reminders")
+
         // Set up tool handler for native API tool calling
         aiService.toolHandler = { [weak self] toolName, arguments in
             guard let self = self else {
