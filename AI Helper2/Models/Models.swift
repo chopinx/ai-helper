@@ -154,9 +154,6 @@ class ChatViewModel: ObservableObject {
 
     // Progress tracking for user feedback
     @Published var currentStatus: ProcessingStatus = .idle
-    @Published var currentStepNumber: Int = 0
-    @Published var currentToolName: String = ""
-    @Published var availableToolsCount: Int = 0
 
     private let aiService = AIService()
     private let mcpAIService = MCPAIService()
@@ -268,8 +265,6 @@ class ChatViewModel: ObservableObject {
             isLoading = true
             showSuggestedPrompts = false
             currentStatus = .loadingTools
-            currentStepNumber = 0
-            currentToolName = ""
             saveCurrentConversation()
         }
 
@@ -301,7 +296,6 @@ class ChatViewModel: ObservableObject {
                 // Use unified chat agent with MCP tools
                 await updateStatus(.loadingTools)
                 let availableTools = await getAvailableTools()
-                await MainActor.run { self.availableToolsCount = availableTools.count }
 
                 let uniResponse: UniMsg
 
@@ -310,26 +304,16 @@ class ChatViewModel: ObservableObject {
 
                 if isReasonActMode {
                     // Use Reason-Act orchestrator with status callbacks
-                    let (finalResponse, steps) = try await unifiedChatAgent.processWithOrchestrator(
+                    let (finalResponse, _) = try await unifiedChatAgent.processWithOrchestrator(
                         messageToSend,
                         configuration: apiConfiguration,
                         availableTools: availableTools,
                         maxSteps: 6,
                         onStatusUpdate: { [weak self] status in
-                            Task { @MainActor in
-                                self?.currentStatus = status
-                                if case .thinkingStep(let step) = status {
-                                    self?.currentStepNumber = step
-                                }
-                                if case .callingTool(let tool) = status {
-                                    self?.currentToolName = tool
-                                }
-                            }
+                            Task { @MainActor in self?.currentStatus = status }
                         },
                         onStepComplete: { [weak self] step in
-                            Task { @MainActor in
-                                self?.reasonActSteps.append(step)
-                            }
+                            Task { @MainActor in self?.reasonActSteps.append(step) }
                         }
                     )
 
@@ -742,5 +726,15 @@ enum ProcessingStatus: Equatable {
         default:
             return true
         }
+    }
+
+    var stepNumber: Int? {
+        if case .thinkingStep(let step) = self { return step }
+        return nil
+    }
+
+    var isError: Bool {
+        if case .error = self { return true }
+        return false
     }
 }
