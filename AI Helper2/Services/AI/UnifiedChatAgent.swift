@@ -20,8 +20,8 @@ class UnifiedChatAgent: ObservableObject {
     private let claudeConverter = ClaudeConverter()
     private let contextManager = ContextManager()
     
-    // Tool execution handler
-    var toolHandler: ((String, [String: Any]) async throws -> UniMsg.ToolResult)?
+    // Tool execution handler - (toolCallId, toolName, arguments) -> ToolResult
+    var toolHandler: ((String, String, [String: Any]) async throws -> UniMsg.ToolResult)?
     
     init() {
         logger.info("🤖 UnifiedChatAgent initialized")
@@ -181,7 +181,7 @@ class UnifiedChatAgent: ObservableObject {
             
             do {
                 if let toolHandler = toolHandler {
-                    let result = try await toolHandler(toolCall.name, toolCall.arguments)
+                    let result = try await toolHandler(toolCall.id, toolCall.name, toolCall.arguments)
                     toolResults.append(result)
                     logger.debug("✅ Tool call successful: \(toolCall.name)")
                 } else {
@@ -693,12 +693,12 @@ enum MultiRoleError: LocalizedError {
 
 class ReasonActOrchestrator {
     private let contextManager: ContextManager
-    private let toolHandler: ((String, [String: Any]) async throws -> UniMsg.ToolResult)?
+    private let toolHandler: ((String, String, [String: Any]) async throws -> UniMsg.ToolResult)?
     private let openAIConverter: OpenAIConverter
     private let claudeConverter: ClaudeConverter
     private let logger = Logger(subsystem: "com.aihelper.orchestrator", category: "ReasonActOrchestrator")
-    
-    init(contextManager: ContextManager, toolHandler: ((String, [String: Any]) async throws -> UniMsg.ToolResult)?, openAIConverter: OpenAIConverter, claudeConverter: ClaudeConverter) {
+
+    init(contextManager: ContextManager, toolHandler: ((String, String, [String: Any]) async throws -> UniMsg.ToolResult)?, openAIConverter: OpenAIConverter, claudeConverter: ClaudeConverter) {
         self.contextManager = contextManager
         self.toolHandler = toolHandler
         self.openAIConverter = openAIConverter
@@ -915,8 +915,8 @@ class ReasonActOrchestrator {
                 isError: true
             )
         }
-        
-        return try await toolHandler(toolCall.name, toolCall.arguments)
+
+        return try await toolHandler(toolCall.id, toolCall.name, toolCall.arguments)
     }
     
     // Duplicate API methods from UnifiedChatAgent for orchestrator use

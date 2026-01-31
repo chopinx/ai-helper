@@ -209,22 +209,23 @@ class ChatViewModel: ObservableObject {
     
     private func setupUnifiedAgent() {
         // Configure tool handler for unified agent
-        unifiedChatAgent.toolHandler = { [weak self] toolName, arguments in
+        // Parameters: (toolCallId, toolName, arguments) -> ToolResult
+        unifiedChatAgent.toolHandler = { [weak self] toolCallId, toolName, arguments in
             guard let self = self else {
-                return UniMsg.ToolResult(toolCallId: "", content: "Service unavailable", isError: true)
+                return UniMsg.ToolResult(toolCallId: toolCallId, content: "Service unavailable", isError: true)
             }
-            
+
             // Execute tool via MCP manager
             do {
                 let mcpResult = try await self.mcpManager.executeToolCall(toolName: toolName, arguments: arguments)
                 return UniMsg.ToolResult(
-                    toolCallId: UUID().uuidString,
+                    toolCallId: toolCallId,
                     content: mcpResult.message,
                     isError: mcpResult.isError
                 )
             } catch {
                 return UniMsg.ToolResult(
-                    toolCallId: UUID().uuidString,
+                    toolCallId: toolCallId,
                     content: "Tool execution failed: \(error.localizedDescription)",
                     isError: true
                 )
