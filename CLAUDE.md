@@ -81,24 +81,29 @@ AI Helper2/
 │   ├── AI_Helper2App.swift        # SwiftUI App entry point
 │   └── ContentView.swift          # Root content view
 ├── Views/                         # UI Components
-│   ├── Chat/ChatView.swift        # Main chat UI + Reason-Act timeline
-│   └── Settings/SettingsView.swift # Configuration UI
+│   ├── Chat/ChatView.swift        # Main chat UI + Reason-Act timeline + streaming
+│   └── Settings/SettingsView.swift # Configuration UI + API key validation
 ├── Models/                        # Data models
 │   ├── Models.swift               # Core models, ChatViewModel
-│   └── ReasonActModels.swift      # Reason-Act step tracking
+│   ├── ReasonActModels.swift      # Reason-Act step tracking
+│   └── Persistence.swift          # JSON-based conversation persistence
 ├── Services/
 │   ├── AI/                        # AI service implementations
 │   │   ├── AIService.swift        # Base AI service with tool calling
+│   │   ├── APIKeyValidator.swift  # API key validation for OpenAI/Claude
 │   │   ├── MCPAIService.swift     # MCP-enhanced AI service
+│   │   ├── StreamingService.swift # SSE streaming for both providers
 │   │   ├── UnifiedChatAgent.swift # Cross-provider agent + orchestration
 │   │   ├── ContextManager.swift   # Conversation context management
 │   │   ├── ProviderConverters.swift # OpenAI/Claude format converters
 │   │   └── UnifiedChatModels.swift # Unified message models
 │   ├── MCP/                       # Model Context Protocol
 │   │   ├── MCPProtocol.swift      # MCP protocol + manager
-│   │   └── CalendarMCPServer.swift # Calendar integration (7 tools)
+│   │   ├── CalendarMCPServer.swift # Calendar integration (7 tools)
+│   │   └── RemindersMCPServer.swift # Reminders integration (5 tools)
 │   └── Voice/
-│       └── VoiceInputManager.swift # Speech-to-text
+│       ├── VoiceInputManager.swift # Voice recording + Whisper transcription
+│       └── WhisperTranscriptionService.swift # OpenAI Whisper API
 ├── Resources/Assets.xcassets      # Visual assets
 └── docs/                          # Documentation
     ├── ITERATION_CHECKLIST.md     # Quality checklist
@@ -115,8 +120,13 @@ AI Helper2/
 |-----------|------|---------|
 | **ChatViewModel** | Models/Models.swift | Central state coordinator |
 | **UnifiedChatAgent** | Services/AI/UnifiedChatAgent.swift | Cross-provider AI with Reason-Act loop |
+| **StreamingService** | Services/AI/StreamingService.swift | SSE streaming for OpenAI/Claude |
+| **APIKeyValidator** | Services/AI/APIKeyValidator.swift | Validates API keys before use |
+| **PersistenceController** | Models/Persistence.swift | JSON-based conversation storage |
 | **MCPManager** | Services/MCP/MCPProtocol.swift | MCP server registry and tool execution |
 | **CalendarMCPServer** | Services/MCP/CalendarMCPServer.swift | Calendar tools (7 operations) |
+| **RemindersMCPServer** | Services/MCP/RemindersMCPServer.swift | Reminders tools (5 operations) |
+| **WhisperTranscriptionService** | Services/Voice/WhisperTranscriptionService.swift | OpenAI Whisper API for voice |
 
 ### Data Flow
 ```
@@ -195,12 +205,11 @@ class NewMCPServer: MCPServer {
 Add to target's Info.plist settings in Xcode:
 
 **Current**:
-- `NSMicrophoneUsageDescription` - Voice input
-- `NSSpeechRecognitionUsageDescription` - Speech-to-text
+- `NSMicrophoneUsageDescription` - Voice input (Whisper transcription)
 - `NSCalendarsUsageDescription` - Calendar access
+- `NSRemindersUsageDescription` - Reminders access
 
 **Planned** (for future MCP servers):
-- `NSRemindersUsageDescription` - Reminders
 - `NSContactsUsageDescription` - Contacts
 - `NSHealthShareUsageDescription` - Health (read)
 - `NSHealthUpdateUsageDescription` - Health (write)

@@ -22,8 +22,8 @@
 ### AI Capabilities
 | # | Feature | Status |
 |---|---------|--------|
-| 1 | Streaming responses | [ ] |
-| 2 | Conversation persistence | [ ] |
+| 1 | Streaming responses | [x] |
+| 2 | Conversation persistence | [x] |
 | 3 | System prompt customization | [ ] |
 | 4 | Retry logic on failure | [ ] |
 | 5 | Token/cost tracking | [ ] |
@@ -33,7 +33,7 @@
 | # | Server | Status |
 |---|--------|--------|
 | 1 | Calendar (7 tools) | [x] |
-| 2 | Reminders | [ ] |
+| 2 | Reminders (5 tools) | [x] |
 | 3 | Contacts | [ ] |
 | 4 | Health | [ ] |
 | 5 | Location | [ ] |
@@ -43,7 +43,7 @@
 | # | Feature | Status |
 |---|---------|--------|
 | 1 | Text input | [x] |
-| 2 | Voice input | [x] |
+| 2 | Voice input (Whisper) | [x] |
 | 3 | Suggested prompts | [x] |
 | 4 | Real-time transcription | [ ] |
 
@@ -99,13 +99,13 @@
 | # | Check | Status |
 |---|-------|--------|
 | 1 | First launch flow | [ ] |
-| 2 | API key validation | [ ] |
+| 2 | API key validation | [x] |
 | 3 | Permission explanations | [ ] |
 
 ### Core Interaction
 | # | Check | Status |
 |---|-------|--------|
-| 1 | Response < 1s (streaming) | [ ] |
+| 1 | Response < 1s (streaming) | [x] |
 | 2 | Loading indicators | [x] |
 | 3 | Auto-scroll to new | [x] |
 | 4 | Empty state content | [ ] |
@@ -168,9 +168,9 @@
 | Category | Done | Total |
 |----------|------|-------|
 | Pre-Push | 0 | 6 |
-| Features - AI | 0 | 6 |
-| Features - MCP | 1 | 6 |
+| Features - AI | 2 | 6 |
+| Features - MCP | 2 | 6 |
 | Features - Input | 3 | 4 |
 | Code Quality | 4 | 20 |
-| UX | 4 | 18 |
-| **Total** | **12** | **60** |
+| UX | 5 | 18 |
+| **Total** | **16** | **60** |
