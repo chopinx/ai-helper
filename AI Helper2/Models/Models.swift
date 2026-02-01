@@ -74,12 +74,17 @@ enum MaxTokensOption: Int, CaseIterable {
 
 struct APIConfiguration: Codable {
     var provider: AIProvider
-    var apiKey: String
+    var apiKey: String  // Not stored in UserDefaults - loaded from Keychain
     var model: String
     var maxTokens: Int
     var temperature: Double
     var enableMCP: Bool
-    
+
+    // Exclude apiKey from Codable to avoid storing in UserDefaults
+    enum CodingKeys: String, CodingKey {
+        case provider, model, maxTokens, temperature, enableMCP
+    }
+
     init(provider: AIProvider = .openai, apiKey: String = "", model: String = "", maxTokens: Int = 1000, temperature: Double = 0.7, enableMCP: Bool = true) {
         self.provider = provider
         self.apiKey = apiKey
@@ -87,6 +92,26 @@ struct APIConfiguration: Codable {
         self.maxTokens = maxTokens
         self.temperature = temperature
         self.enableMCP = enableMCP
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try container.decode(AIProvider.self, forKey: .provider)
+        model = try container.decode(String.self, forKey: .model)
+        maxTokens = try container.decode(Int.self, forKey: .maxTokens)
+        temperature = try container.decode(Double.self, forKey: .temperature)
+        enableMCP = try container.decode(Bool.self, forKey: .enableMCP)
+        apiKey = "" // Will be loaded from Keychain separately
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(provider, forKey: .provider)
+        try container.encode(model, forKey: .model)
+        try container.encode(maxTokens, forKey: .maxTokens)
+        try container.encode(temperature, forKey: .temperature)
+        try container.encode(enableMCP, forKey: .enableMCP)
+        // apiKey is NOT encoded - stored in Keychain instead
     }
 }
 
@@ -153,9 +178,6 @@ class ChatViewModel: ObservableObject {
     @Published var currentMessage: String = ""
     @Published var isLoading: Bool = false
     @Published var apiConfiguration: APIConfiguration = APIConfiguration()
-    @Published var showMCPDetails: Bool = false
-    @Published var useUnifiedAgent: Bool = true
-    @Published var useMultiRole: Bool = false // New: Toggle for multi-role conversation
     @Published var streamingText: String = "" // Streaming response text
 
     @Published var reasonActSteps: [ReasonActStep] = []
@@ -165,28 +187,25 @@ class ChatViewModel: ObservableObject {
 
     // Progress tracking for user feedback
     @Published var currentStatus: ProcessingStatus = .idle
+    @Published var processTracker = ProcessTracker()
 
-    private let aiService = AIService()
-    private let mcpAIService = MCPAIService()
+    // Pending action confirmation (for delete/update operations)
+    @Published var pendingActions: [PendingAction] = []
+    @Published var showPendingActionSheet: Bool = false
+
+    // Simple AI service (replaces complex orchestration)
+    private let simpleAI = SimpleAIService()
     private let streamingService = StreamingService()
-    @Published var unifiedChatAgent = UnifiedChatAgent()
-    @Published var multiRoleOrchestrator: MultiRoleOrchestrator? // New: Multi-role orchestrator
     private let userDefaults = UserDefaults.standard
     private let configKey = "APIConfiguration"
 
     // Persistence
     private var currentConversationID: UUID?
     private let persistence = PersistenceController.shared
-    
-    var mcpManager: MCPManager {
-        return mcpAIService.mcpManager
-    }
-    
+
     init() {
         loadConfiguration()
         loadPersistedConversation()
-        setupUnifiedAgent()
-        setupMultiRoleOrchestrator()
         setupSuggestedPrompts()
     }
 
@@ -211,57 +230,34 @@ class ChatViewModel: ObservableObject {
         currentConversationID = persistence.createNewConversation()
         messages.removeAll()
         reasonActSteps.removeAll()
-        unifiedChatAgent.clearConversation()
         showSuggestedPrompts = true
     }
     
-    private func setupUnifiedAgent() {
-        // Configure tool handler for unified agent
-        // Parameters: (toolCallId, toolName, arguments) -> ToolResult
-        unifiedChatAgent.toolHandler = { [weak self] toolCallId, toolName, arguments in
-            guard let self = self else {
-                return UniMsg.ToolResult(toolCallId: toolCallId, content: "Service unavailable", isError: true)
-            }
-
-            // Execute tool via MCP manager
-            do {
-                let mcpResult = try await self.mcpManager.executeToolCall(toolName: toolName, arguments: arguments)
-                return UniMsg.ToolResult(
-                    toolCallId: toolCallId,
-                    content: mcpResult.message,
-                    isError: mcpResult.isError
-                )
-            } catch {
-                return UniMsg.ToolResult(
-                    toolCallId: toolCallId,
-                    content: "Tool execution failed: \(error.localizedDescription)",
-                    isError: true
-                )
-            }
-        }
-    }
-    
-    private func setupMultiRoleOrchestrator() {
-        let mcpManager = mcpAIService.mcpManager
-        
-        multiRoleOrchestrator = MultiRoleOrchestrator(
-            aiService: aiService,
-            mcpManager: mcpManager,
-            configuration: apiConfiguration,
-            maxIterations: 8
-        )
-    }
-    
     func saveConfiguration() {
+        // Save non-sensitive config to UserDefaults
         if let encoded = try? JSONEncoder().encode(apiConfiguration) {
             userDefaults.set(encoded, forKey: configKey)
         }
+
+        // Save API key to Keychain (secure storage)
+        if !apiConfiguration.apiKey.isEmpty {
+            try? KeychainManager.shared.saveAPIKey(
+                apiConfiguration.apiKey,
+                for: apiConfiguration.provider.rawValue
+            )
+        }
     }
-    
+
     func loadConfiguration() {
+        // Load non-sensitive config from UserDefaults
         if let data = userDefaults.data(forKey: configKey),
            let config = try? JSONDecoder().decode(APIConfiguration.self, from: data) {
             apiConfiguration = config
+
+            // Load API key from Keychain (secure storage)
+            if let apiKey = KeychainManager.shared.getAPIKey(for: config.provider.rawValue) {
+                apiConfiguration.apiKey = apiKey
+            }
         }
     }
     
@@ -276,6 +272,8 @@ class ChatViewModel: ObservableObject {
             isLoading = true
             showSuggestedPrompts = false
             currentStatus = .loadingTools
+            processTracker.reset()
+            processTracker.currentPhase = .loadingTools
             saveCurrentConversation()
         }
 
@@ -286,67 +284,29 @@ class ChatViewModel: ObservableObject {
         }
 
         do {
-            let response: String
-
-            if useMultiRole && apiConfiguration.enableMCP {
-                // Use multi-role conversation system
-                guard let orchestrator = multiRoleOrchestrator else {
-                    throw ChatError.orchestratorUnavailable
+            // Simple AI service: message + tools → response (max 5 API calls)
+            // Status callback updates UI with progress during tool execution
+            let response = try await simpleAI.chat(
+                message: messageToSend,
+                history: messages.dropLast(), // Exclude the just-added user message
+                config: apiConfiguration,
+                onStatusUpdate: { [weak self] status in
+                    Task { @MainActor in
+                        self?.currentStatus = status
+                    }
+                },
+                onProcessUpdate: { [weak self] update in
+                    Task { @MainActor in
+                        self?.handleProcessUpdate(update)
+                    }
+                },
+                onPendingAction: { [weak self] action in
+                    Task { @MainActor in
+                        self?.pendingActions.append(action)
+                        self?.showPendingActionSheet = true
+                    }
                 }
-
-                await orchestrator.startConversation(goal: messageToSend)
-
-                // Extract final response from orchestrator state
-                if let lastMessage = orchestrator.state.messages.last {
-                    response = lastMessage
-                } else {
-                    response = "Multi-role conversation completed but no final response was generated."
-                }
-
-            } else if useUnifiedAgent && apiConfiguration.enableMCP {
-                // Use unified chat agent with MCP tools
-                await updateStatus(.loadingTools)
-                let availableTools = await getAvailableTools()
-
-                let uniResponse: UniMsg
-
-                // Clear previous steps when starting new request
-                await MainActor.run { self.reasonActSteps.removeAll() }
-
-                if isReasonActMode {
-                    // Use Reason-Act orchestrator with status callbacks
-                    let (finalResponse, _) = try await unifiedChatAgent.processWithOrchestrator(
-                        messageToSend,
-                        configuration: apiConfiguration,
-                        availableTools: availableTools,
-                        maxSteps: 6,
-                        onStatusUpdate: { [weak self] status in
-                            Task { @MainActor in self?.currentStatus = status }
-                        },
-                        onStepComplete: { [weak self] step in
-                            Task { @MainActor in self?.reasonActSteps.append(step) }
-                        }
-                    )
-
-                    uniResponse = finalResponse
-                } else {
-                    // Use single-step mode
-                    await updateStatus(.generatingResponse)
-                    uniResponse = try await unifiedChatAgent.sendMessage(messageToSend, configuration: apiConfiguration, availableTools: availableTools)
-                }
-                response = uniResponse.textContent
-
-            } else if apiConfiguration.enableMCP {
-                // Use original MCP system
-                await updateStatus(.generatingResponse)
-                let recentHistory = messages.suffix(5).map { $0.content }
-                response = try await mcpAIService.sendMessage(messageToSend, conversationHistory: Array(recentHistory), configuration: apiConfiguration)
-
-            } else {
-                // Use basic AI service
-                await updateStatus(.generatingResponse)
-                response = try await aiService.sendMessage(messageToSend, configuration: apiConfiguration)
-            }
+            )
 
             let aiMessage = ChatMessage(content: response, isUser: false)
 
@@ -377,6 +337,26 @@ class ChatViewModel: ObservableObject {
         currentStatus = status
     }
 
+    @MainActor
+    private func handleProcessUpdate(_ update: ProcessUpdate) {
+        switch update {
+        case .toolsLoaded(let tools):
+            processTracker.setToolsLoaded(tools)
+        case .iterationStarted(let number):
+            processTracker.startIteration(number)
+        case .toolCallStarted(let name, let isCalendar):
+            processTracker.addToolCall(name: name, isCalendar: isCalendar)
+        case .toolCallCompleted(let name, let success, let message):
+            processTracker.completeToolCall(name: name, success: success, message: message)
+        case .iterationCompleted:
+            processTracker.completeIteration()
+        case .completed:
+            processTracker.setCompleted()
+        case .error(let message):
+            processTracker.setError(message)
+        }
+    }
+
     /// Send message with streaming response
     func sendMessageStreaming() {
         guard !currentMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -388,8 +368,6 @@ class ChatViewModel: ObservableObject {
         streamingText = ""
         showSuggestedPrompts = false
         saveCurrentConversation()
-
-        let messageToSend = currentMessage
         currentMessage = ""
 
         // Build messages array for API
@@ -439,70 +417,6 @@ class ChatViewModel: ObservableObject {
         }
     }
 
-    /// Get available MCP tools as unified tool descriptors
-    private func getAvailableTools() async -> [UniTool] {
-        var tools: [UniTool] = []
-        var toolNames: Set<String> = []
-        
-        // Get tools from MCP servers first (they have priority)
-        for (serverName, server) in mcpManager.availableServers {
-            do {
-                let mcpTools = try await server.listTools()
-                for mcpTool in mcpTools {
-                    // Skip if tool name already exists
-                    if toolNames.contains(mcpTool.name) {
-                        continue
-                    }
-                    
-                    let uniTool = UniTool(
-                        name: mcpTool.name,
-                        description: mcpTool.description,
-                        parameters: UniTool.ToolParameters(
-                            properties: convertMCPParameters(mcpTool.parameters),
-                            required: mcpTool.parameters.filter { $0.required }.map { $0.name }
-                        ),
-                        metadata: ["server": serverName]
-                    )
-                    tools.append(uniTool)
-                    toolNames.insert(mcpTool.name)
-                }
-            } catch {
-                // Continue if server fails to list tools
-                continue
-            }
-        }
-        
-        // Add fallback calendar tool if not provided by MCP servers
-        if mcpManager.isCalendarEnabled && !toolNames.contains("create_event") {
-            let calendarTool = UniTool.createEventTool()
-            tools.append(calendarTool)
-            toolNames.insert(calendarTool.name)
-        }
-        
-        // Add search tool if not already present
-        if !toolNames.contains("search") {
-            let searchTool = UniTool.searchTool()
-            tools.append(searchTool)
-            toolNames.insert(searchTool.name)
-        }
-        
-        return tools
-    }
-    
-    /// Convert MCP tool parameters to unified format
-    private func convertMCPParameters(_ mcpParams: [MCPParameter]) -> [String: UniTool.ParameterProperty] {
-        var properties: [String: UniTool.ParameterProperty] = [:]
-        
-        for param in mcpParams {
-            properties[param.name] = UniTool.ParameterProperty(
-                type: param.type,
-                description: param.description
-            )
-        }
-        
-        return properties
-    }
-    
     /// Toggle between simple and reason-act modes
     func toggleReasonActMode() {
         isReasonActMode.toggle()
@@ -640,21 +554,67 @@ class ChatViewModel: ObservableObject {
         return messages.isEmpty && showSuggestedPrompts
     }
 
-    /// Toggle multi-role conversation mode
-    func toggleMultiRoleMode() {
-        useMultiRole.toggle()
-        if useMultiRole {
-            useUnifiedAgent = false // Disable unified agent when using multi-role
+    // MARK: - Pending Action Handling
+
+    func confirmPendingActions() async {
+        guard !pendingActions.isEmpty else { return }
+
+        await MainActor.run {
+            isLoading = true
+        }
+
+        var successResults: [String] = []
+        var errorResults: [String] = []
+
+        for action in pendingActions {
+            await MainActor.run {
+                currentStatus = .callingTool(action.toolName)
+            }
+
+            do {
+                let result = try await simpleAI.executeConfirmedAction(action)
+                if result.isError {
+                    errorResults.append("\(action.title): \(result.message)")
+                } else {
+                    successResults.append("\(action.title): \(result.message)")
+                }
+            } catch {
+                errorResults.append("\(action.title): \(error.localizedDescription)")
+            }
+        }
+
+        // Build result message
+        var resultText = ""
+        if !successResults.isEmpty {
+            resultText += "Completed:\n• " + successResults.joined(separator: "\n• ")
+        }
+        if !errorResults.isEmpty {
+            if !resultText.isEmpty { resultText += "\n\n" }
+            resultText += "Errors:\n• " + errorResults.joined(separator: "\n• ")
+        }
+
+        let resultMessage = ChatMessage(content: resultText, isUser: false)
+        await MainActor.run {
+            messages.append(resultMessage)
+            isLoading = false
+            currentStatus = .completed
+            pendingActions.removeAll()
+            showPendingActionSheet = false
+            saveCurrentConversation()
         }
     }
-    
-    /// Toggle unified agent mode
-    func toggleUnifiedAgent() {
-        useUnifiedAgent.toggle()
-        if useUnifiedAgent {
-            useMultiRole = false // Disable multi-role when using unified agent
-        }
+
+    func cancelPendingActions() {
+        let count = pendingActions.count
+        let cancelMessage = ChatMessage(content: "\(count) action(s) cancelled.", isUser: false)
+        messages.append(cancelMessage)
+        pendingActions.removeAll()
+        showPendingActionSheet = false
+        isLoading = false
+        currentStatus = .idle
+        saveCurrentConversation()
     }
+
 }
 
 enum ChatError: LocalizedError {
@@ -688,13 +648,13 @@ enum ProcessingStatus: Equatable {
         case .idle:
             return ""
         case .loadingTools:
-            return "Loading available tools..."
+            return "Loading tools..."
         case .thinkingStep(let step):
             return "Thinking (Step \(step))..."
         case .callingTool(let toolName):
             return "Calling \(toolName)..."
         case .processingToolResult(let toolName):
-            return "Processing \(toolName) result..."
+            return "Processing \(toolName)..."
         case .generatingResponse:
             return "Generating response..."
         case .completed:
@@ -743,4 +703,177 @@ enum ProcessingStatus: Equatable {
         guard case .error = self else { return false }
         return true
     }
+}
+
+// MARK: - Process Tracker (Dynamic UI)
+
+/// Tracks the entire processing workflow for dynamic UI display
+class ProcessTracker: ObservableObject {
+    @Published var iterations: [ProcessIteration] = []
+    @Published var currentPhase: ProcessPhase = .idle
+    @Published var toolsLoaded: [String] = []
+
+    func reset() {
+        iterations.removeAll()
+        currentPhase = .idle
+        toolsLoaded.removeAll()
+    }
+
+    func setToolsLoaded(_ tools: [String]) {
+        toolsLoaded = tools
+    }
+
+    func startIteration(_ number: Int) {
+        let iteration = ProcessIteration(number: number)
+        iterations.append(iteration)
+        currentPhase = .thinking
+    }
+
+    func addToolCall(name: String, isCalendar: Bool) {
+        guard var last = iterations.last else { return }
+        let toolCall = ToolCallRecord(name: name, isCalendar: isCalendar)
+        last.toolCalls.append(toolCall)
+        iterations[iterations.count - 1] = last
+        currentPhase = .callingTool(name)
+    }
+
+    func completeToolCall(name: String, success: Bool, message: String) {
+        guard var last = iterations.last,
+              let idx = last.toolCalls.lastIndex(where: { $0.name == name && $0.status == .running }) else { return }
+        last.toolCalls[idx].status = success ? .success : .failed
+        last.toolCalls[idx].resultPreview = String(message.prefix(100))
+        last.toolCalls[idx].endTime = Date()
+        iterations[iterations.count - 1] = last
+        currentPhase = .processingResult(name)
+    }
+
+    func completeIteration() {
+        guard var last = iterations.last else { return }
+        last.endTime = Date()
+        iterations[iterations.count - 1] = last
+    }
+
+    func setCompleted() {
+        currentPhase = .completed
+    }
+
+    func setError(_ message: String) {
+        currentPhase = .error(message)
+    }
+}
+
+enum ProcessPhase: Equatable {
+    case idle
+    case loadingTools
+    case thinking
+    case callingTool(String)
+    case processingResult(String)
+    case completed
+    case error(String)
+}
+
+struct ProcessIteration: Identifiable {
+    let id = UUID()
+    let number: Int
+    var toolCalls: [ToolCallRecord] = []
+    let startTime = Date()
+    var endTime: Date?
+
+    var duration: TimeInterval {
+        (endTime ?? Date()).timeIntervalSince(startTime)
+    }
+}
+
+struct ToolCallRecord: Identifiable {
+    let id = UUID()
+    let name: String
+    let isCalendar: Bool
+    var status: ToolCallStatus = .running
+    var resultPreview: String = ""
+    let startTime = Date()
+    var endTime: Date?
+
+    var duration: TimeInterval {
+        (endTime ?? Date()).timeIntervalSince(startTime)
+    }
+
+    var icon: String {
+        isCalendar ? "calendar" : "checkmark.circle"
+    }
+
+    var statusIcon: String {
+        switch status {
+        case .running: return "arrow.trianglehead.2.clockwise"
+        case .success: return "checkmark.circle.fill"
+        case .failed: return "xmark.circle.fill"
+        }
+    }
+
+    var statusColor: Color {
+        switch status {
+        case .running: return .blue
+        case .success: return .green
+        case .failed: return .red
+        }
+    }
+}
+
+enum ToolCallStatus {
+    case running
+    case success
+    case failed
+}
+
+// MARK: - Process Update Events (for SimpleAIService callbacks)
+
+enum ProcessUpdate {
+    case toolsLoaded([String])
+    case iterationStarted(Int)
+    case toolCallStarted(name: String, isCalendar: Bool)
+    case toolCallCompleted(name: String, success: Bool, message: String)
+    case iterationCompleted
+    case completed
+    case error(String)
+}
+
+// MARK: - Pending Action (Confirmation for delete/update)
+
+struct PendingAction: Identifiable {
+    let id = UUID()
+    let type: PendingActionType
+    let toolName: String
+    let arguments: [String: Any]
+    let title: String
+    let details: String
+    let isCalendar: Bool
+
+    var icon: String {
+        switch type {
+        case .delete: return "trash"
+        case .update: return "pencil"
+        case .complete: return "checkmark.circle"
+        }
+    }
+
+    var color: Color {
+        switch type {
+        case .delete: return .red
+        case .update: return .orange
+        case .complete: return .green
+        }
+    }
+
+    var actionText: String {
+        switch type {
+        case .delete: return "Delete"
+        case .update: return "Update"
+        case .complete: return "Complete"
+        }
+    }
+}
+
+enum PendingActionType {
+    case delete
+    case update
+    case complete
 }

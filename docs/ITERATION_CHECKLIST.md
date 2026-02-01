@@ -33,7 +33,7 @@
 | # | Server | Status |
 |---|--------|--------|
 | 1 | Calendar (7 tools) | [x] |
-| 2 | Reminders (5 tools) | [x] |
+| 2 | Reminders (7 tools) | [x] |
 | 3 | Contacts | [ ] |
 | 4 | Health | [ ] |
 | 5 | Location | [ ] |
@@ -163,14 +163,14 @@
 
 ## Progress Tracking
 
-**Last Updated**: 2026-01-31
+**Last Updated**: 2026-02-01
 
 | Category | Done | Total |
 |----------|------|-------|
-| Pre-Push | 0 | 6 |
+| Pre-Push | 6 | 6 |
 | Features - AI | 2 | 6 |
 | Features - MCP | 2 | 6 |
 | Features - Input | 3 | 4 |
 | Code Quality | 4 | 20 |
 | UX | 5 | 18 |
-| **Total** | **16** | **60** |
+| **Total** | **22** | **60** |

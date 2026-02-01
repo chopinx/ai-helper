@@ -81,29 +81,26 @@ AI Helper2/
 │   ├── AI_Helper2App.swift        # SwiftUI App entry point
 │   └── ContentView.swift          # Root content view
 ├── Views/                         # UI Components
-│   ├── Chat/ChatView.swift        # Main chat UI + Reason-Act timeline + streaming
+│   ├── Chat/ChatView.swift        # Main chat UI + calendar event buttons
 │   └── Settings/SettingsView.swift # Configuration UI + API key validation
 ├── Models/                        # Data models
 │   ├── Models.swift               # Core models, ChatViewModel
-│   ├── ReasonActModels.swift      # Reason-Act step tracking
+│   ├── ReasonActModels.swift      # Reason-Act step tracking (legacy)
 │   └── Persistence.swift          # JSON-based conversation persistence
 ├── Services/
 │   ├── AI/                        # AI service implementations
-│   │   ├── AIService.swift        # Base AI service with tool calling
+│   │   ├── SimpleAIService.swift  # Simple 2-call AI service with tool calling
+│   │   ├── ToolModels.swift       # Universal tool interface (Tool, ToolCall, ToolResult)
 │   │   ├── APIKeyValidator.swift  # API key validation for OpenAI/Claude
-│   │   ├── MCPAIService.swift     # MCP-enhanced AI service
-│   │   ├── StreamingService.swift # SSE streaming for both providers
-│   │   ├── UnifiedChatAgent.swift # Cross-provider agent + orchestration
-│   │   ├── ContextManager.swift   # Conversation context management
-│   │   ├── ProviderConverters.swift # OpenAI/Claude format converters
-│   │   └── UnifiedChatModels.swift # Unified message models
+│   │   └── StreamingService.swift # SSE streaming for both providers
 │   ├── MCP/                       # Model Context Protocol
 │   │   ├── MCPProtocol.swift      # MCP protocol + manager
 │   │   ├── CalendarMCPServer.swift # Calendar integration (7 tools)
 │   │   └── RemindersMCPServer.swift # Reminders integration (5 tools)
-│   └── Voice/
-│       ├── VoiceInputManager.swift # Voice recording + Whisper transcription
-│       └── WhisperTranscriptionService.swift # OpenAI Whisper API
+│   ├── Voice/
+│   │   ├── VoiceInputManager.swift # Voice recording + Whisper transcription
+│   │   └── WhisperTranscriptionService.swift # OpenAI Whisper API
+│   └── KeychainManager.swift      # Secure API key storage
 ├── Resources/Assets.xcassets      # Visual assets
 └── docs/                          # Documentation
     ├── ITERATION_CHECKLIST.md     # Quality checklist
@@ -119,34 +116,51 @@ AI Helper2/
 | Component | File | Purpose |
 |-----------|------|---------|
 | **ChatViewModel** | Models/Models.swift | Central state coordinator |
-| **UnifiedChatAgent** | Services/AI/UnifiedChatAgent.swift | Cross-provider AI with Reason-Act loop |
+| **SimpleAIService** | Services/AI/SimpleAIService.swift | ReAct loop AI with multi-server tool routing (max 5 iterations) |
+| **ToolModels** | Services/AI/ToolModels.swift | Universal tool interface (OpenAI/Claude) |
 | **StreamingService** | Services/AI/StreamingService.swift | SSE streaming for OpenAI/Claude |
 | **APIKeyValidator** | Services/AI/APIKeyValidator.swift | Validates API keys before use |
+| **KeychainManager** | Services/KeychainManager.swift | Secure API key storage |
 | **PersistenceController** | Models/Persistence.swift | JSON-based conversation storage |
-| **MCPManager** | Services/MCP/MCPProtocol.swift | MCP server registry and tool execution |
 | **CalendarMCPServer** | Services/MCP/CalendarMCPServer.swift | Calendar tools (7 operations) |
-| **RemindersMCPServer** | Services/MCP/RemindersMCPServer.swift | Reminders tools (5 operations) |
+| **RemindersMCPServer** | Services/MCP/RemindersMCPServer.swift | Reminders tools (7 operations) |
 | **WhisperTranscriptionService** | Services/Voice/WhisperTranscriptionService.swift | OpenAI Whisper API for voice |
 
-### Data Flow
+### Data Flow (ReAct Loop with Multi-Server Routing)
 ```
-User Input → ChatViewModel → UnifiedChatAgent → AI Provider API
-                                    ↓
-                              Tool Calls → MCPManager → MCP Servers → iOS Frameworks
-                                    ↓
-                              Response → ChatViewModel → ChatView
+User message → AI reviews → needs tools?
+                              │
+              ┌───────────────┴───────────────┐
+              ↓                               ↓
+           NO: Reply                    YES: Route to server
+           immediately                        ↓
+                                      ┌───────┴───────┐
+                                      ↓               ↓
+                               Calendar tools   Reminder tools
+                               (7 operations)   (7 operations)
+                                      └───────┬───────┘
+                                              ↓
+                                      Validate results
+                                              ↓
+                                      Task done? ──→ YES: Reply
+                                              │
+                                              ↓ NO
+                                      Loop back (max 5x)
 ```
+- Simple questions: 1 API call, no tools
+- Calendar/Reminders tasks: loops until complete or needs user input
+- Tool routing based on tool name (calendar tools → CalendarMCPServer, reminder tools → RemindersMCPServer)
 
 ### Provider Configuration
 
 **OpenAI**:
 - Endpoint: `https://api.openai.com/v1/chat/completions`
-- Auth: `Bearer {apiKey}` header
+- Auth: `Bearer {apiKey}` header (stored in Keychain)
 - Models: gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-4, gpt-3.5-turbo
 
 **Claude**:
 - Endpoint: `https://api.anthropic.com/v1/messages`
-- Auth: `x-api-key: {apiKey}` header
+- Auth: `x-api-key: {apiKey}` header (stored in Keychain)
 - Version: `anthropic-version: 2023-06-01`
 - Models: claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022, claude-3-opus-20240229
 
@@ -158,7 +172,8 @@ User Input → ChatViewModel → UnifiedChatAgent → AI Provider API
 - `@StateObject` for view models created in view
 - `@ObservedObject` for passed objects
 - `@Published` for observable properties
-- UserDefaults for settings persistence
+- UserDefaults for non-sensitive settings
+- Keychain for API keys (secure storage)
 
 ### Error Handling
 - Custom error enums conforming to `LocalizedError`
@@ -185,7 +200,12 @@ class NewMCPServer: MCPServer {
 1. Create `Services/MCP/NewMCPServer.swift` implementing `MCPServer`
 2. Define tools in `listTools()`
 3. Implement tool execution in `callTool()`
-4. Register in `MCPManager` or `ChatViewModel.setupUnifiedAgent()`
+4. Register in `SimpleAIService`:
+   - Add server property
+   - Initialize in `init()`
+   - Add tool names to routing logic
+   - Combine tools in chat method
+   - Update system prompt with new sub-agent
 5. Add required privacy permissions to Info.plist
 
 ### Adding AI Provider

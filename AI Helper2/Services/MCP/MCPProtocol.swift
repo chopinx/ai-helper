@@ -46,7 +46,6 @@ protocol MCPServer {
     func initialize() async throws
     func listTools() async throws -> [MCPTool]
     func callTool(name: String, arguments: [String: Any]) async throws -> MCPResult
-    func canHandle(message: String, context: MCPEvaluationContext, aiService: AIService, configuration: APIConfiguration) async -> MCPCapabilityResult
     func getServerName() -> String
     func getServerDescription() -> String
 }
@@ -60,29 +59,6 @@ struct MCPTool {
         self.name = name
         self.description = description
         self.parameters = parameters
-    }
-    
-    /// Convert MCP tool to API tool format for native tool calling
-    func toAPITool() -> APITool {
-        var properties: [String: APIToolProperty] = [:]
-        var required: [String] = []
-        
-        for param in parameters {
-            properties[param.name] = APIToolProperty(
-                type: param.type,
-                description: param.description
-            )
-            if param.required {
-                required.append(param.name)
-            }
-        }
-        
-        return APITool(
-            name: name,
-            description: description,
-            properties: properties,
-            required: required
-        )
     }
 }
 
@@ -103,6 +79,13 @@ struct MCPParameter {
 struct MCPResult {
     let message: String
     let isError: Bool
+    let metadata: [String: String]  // Optional metadata like eventId, etc.
+
+    init(message: String, isError: Bool, metadata: [String: String] = [:]) {
+        self.message = message
+        self.isError = isError
+        self.metadata = metadata
+    }
 }
 
 struct MCPCapabilityResult {
@@ -170,20 +153,20 @@ class MCPManager: ObservableObject {
         return registeredServers
     }
     
-    /// Get all MCP tools converted to API tool format for native tool calling
-    func getAllAPITools() async -> [APITool] {
-        var allTools: [APITool] = []
-        
+    /// Get all MCP tools converted to universal Tool format
+    func getAllTools() async -> [Tool] {
+        var allTools: [Tool] = []
+
         for (serverName, server) in registeredServers {
             do {
                 let mcpTools = try await server.listTools()
-                let apiTools = mcpTools.map { $0.toAPITool() }
-                allTools.append(contentsOf: apiTools)
+                let tools = mcpTools.map { $0.toTool() }
+                allTools.append(contentsOf: tools)
             } catch {
                 MCPLogger.logError(context: "Getting tools from \(serverName)", error: error)
             }
         }
-        
+
         return allTools
     }
     

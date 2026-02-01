@@ -164,18 +164,62 @@ class CalendarMCPServer: MCPServer {
             throw error
         }
     }
-    
+
+    // MARK: - Date Parsing Helper
+
+    /// Parse date string with multiple format support
+    private func parseFlexibleDate(_ dateString: String) -> Date? {
+        // Try ISO8601 with timezone (e.g., "2026-02-01T10:00:00Z" or "2026-02-01T10:00:00+00:00")
+        let iso8601Formatter = ISO8601DateFormatter()
+        iso8601Formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = iso8601Formatter.date(from: dateString) {
+            return date
+        }
+
+        // Try ISO8601 without fractional seconds
+        iso8601Formatter.formatOptions = [.withInternetDateTime]
+        if let date = iso8601Formatter.date(from: dateString) {
+            return date
+        }
+
+        // Try common date formats
+        let formats = [
+            "yyyy-MM-dd'T'HH:mm:ss",      // 2026-02-01T10:00:00
+            "yyyy-MM-dd HH:mm:ss",         // 2026-02-01 10:00:00
+            "yyyy-MM-dd HH:mm",            // 2026-02-01 10:00
+            "yyyy-MM-dd'T'HH:mm",          // 2026-02-01T10:00
+            "yyyy/MM/dd HH:mm:ss",         // 2026/02/01 10:00:00
+            "yyyy/MM/dd HH:mm",            // 2026/02/01 10:00
+            "MM/dd/yyyy HH:mm",            // 02/01/2026 10:00
+            "dd-MM-yyyy HH:mm"             // 01-02-2026 10:00
+        ]
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dateFormatter.timeZone = TimeZone.current
+
+        for format in formats {
+            dateFormatter.dateFormat = format
+            if let date = dateFormatter.date(from: dateString) {
+                return date
+            }
+        }
+
+        return nil
+    }
+
+    // MARK: - Tool Implementations
+
     private func createEvent(arguments: [String: Any]) async throws -> MCPResult {
         guard let title = arguments["title"] as? String,
               let startDateString = arguments["start_date"] as? String,
               let endDateString = arguments["end_date"] as? String else {
             throw MCPError.invalidArguments("Missing required fields: title, start_date, end_date")
         }
-        
-        let dateFormatter = ISO8601DateFormatter()
-        guard let startDate = dateFormatter.date(from: startDateString),
-              let endDate = dateFormatter.date(from: endDateString) else {
-            throw MCPError.invalidArguments("Invalid date format. Use ISO 8601 format.")
+
+        guard let startDate = parseFlexibleDate(startDateString),
+              let endDate = parseFlexibleDate(endDateString) else {
+            throw MCPError.invalidArguments("Invalid date format. Expected formats: '2026-02-01T10:00:00Z', '2026-02-01T10:00:00', or '2026-02-01 10:00'")
         }
         
         let event = EKEvent(eventStore: eventStore)
@@ -187,26 +231,35 @@ class CalendarMCPServer: MCPServer {
         
         do {
             try eventStore.save(event, span: .thisEvent)
+
+            // Include event ID for deep linking to Calendar app
+            let eventId = event.eventIdentifier ?? ""
+            let startTimestamp = Int(startDate.timeIntervalSince1970)
+
             return MCPResult(
                 message: "Calendar event '\(title)' created successfully for \(DateFormatter.localizedString(from: startDate, dateStyle: .medium, timeStyle: .short))",
-                isError: false
+                isError: false,
+                metadata: [
+                    "eventId": eventId,
+                    "eventTitle": title,
+                    "startTimestamp": "\(startTimestamp)",
+                    "action": "created"
+                ]
             )
         } catch {
             throw MCPError.operationFailed("Failed to create event: \(error.localizedDescription)")
         }
     }
-    
+
     private func listEvents(arguments: [String: Any]) async throws -> MCPResult {
-        let dateFormatter = ISO8601DateFormatter()
-        
         // Default to today and next 7 days if no dates provided
         let startDate: Date
         let endDate: Date
         
         if let startDateString = arguments["start_date"] as? String,
            let endDateString = arguments["end_date"] as? String,
-           let parsedStartDate = dateFormatter.date(from: startDateString),
-           let parsedEndDate = dateFormatter.date(from: endDateString) {
+           let parsedStartDate = parseFlexibleDate(startDateString),
+           let parsedEndDate = parseFlexibleDate(endDateString) {
             startDate = parsedStartDate
             endDate = parsedEndDate
         } else {
@@ -267,9 +320,8 @@ class CalendarMCPServer: MCPServer {
         
         if let startDateString = arguments["new_start_date"] as? String,
            let endDateString = arguments["new_end_date"] as? String {
-            let dateFormatter = ISO8601DateFormatter()
-            if let newStartDate = dateFormatter.date(from: startDateString),
-               let newEndDate = dateFormatter.date(from: endDateString) {
+            if let newStartDate = parseFlexibleDate(startDateString),
+               let newEndDate = parseFlexibleDate(endDateString) {
                 event.startDate = newStartDate
                 event.endDate = newEndDate
             }
@@ -277,15 +329,26 @@ class CalendarMCPServer: MCPServer {
         
         do {
             try eventStore.save(event, span: .thisEvent)
+
+            // Include event ID for deep linking to Calendar app
+            let eventId = event.eventIdentifier ?? ""
+            let startTimestamp = Int(event.startDate.timeIntervalSince1970)
+
             return MCPResult(
                 message: "Event '\(event.title ?? "Untitled")' updated successfully",
-                isError: false
+                isError: false,
+                metadata: [
+                    "eventId": eventId,
+                    "eventTitle": event.title ?? "Untitled",
+                    "startTimestamp": "\(startTimestamp)",
+                    "action": "updated"
+                ]
             )
         } catch {
             throw MCPError.operationFailed("Failed to update event: \(error.localizedDescription)")
         }
     }
-    
+
     private func deleteEvent(arguments: [String: Any]) async throws -> MCPResult {
         guard let eventTitle = arguments["event_title"] as? String else {
             throw MCPError.invalidArguments("Missing required field: event_title")
@@ -423,159 +486,7 @@ class CalendarMCPServer: MCPServer {
             isError: false
         )
     }
-    
-    func canHandle(message: String, context: MCPEvaluationContext, aiService: AIService, configuration: APIConfiguration) async -> MCPCapabilityResult {
-        let evaluationStartTime = CFAbsoluteTimeGetCurrent()
-        logger.info("🤖 Starting AI-powered calendar capability evaluation")
-        logger.debug("📝 Message to evaluate: \(message)")
-        logger.debug("🕰️ Context: \(context.currentDate), TZ: \(context.timeZone.identifier), Locale: \(context.locale.identifier)")
-        
-        // Create comprehensive context for AI evaluation
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .full
-        dateFormatter.timeStyle = .short
-        
-        let timeFormatter = DateFormatter()
-        timeFormatter.timeStyle = .short
-        
-        // Get available tools for context
-        let availableTools = try? await listTools()
-        let toolDescriptions = availableTools?.map { "- \($0.name): \($0.description)" }.joined(separator: "\n") ?? ""
-        
-        logger.debug("🔧 Available tools for evaluation context: \(availableTools?.count ?? 0) tools")
-        logger.debug("📋 Conversation history: \(context.conversationHistory.count) messages")
-        
-        let evaluationPrompt = """
-        You are an expert AI assistant evaluating whether a Calendar Management Server should handle a user's message.
-        
-        ## Current Context:
-        - Current Date/Time: \(dateFormatter.string(from: context.currentDate))
-        - User Timezone: \(context.timeZone.identifier)
-        - User Locale: \(context.locale.identifier)
-        - Platform: \(context.deviceInfo["platform"] ?? "Unknown")
-        
-        ## Recent Conversation History:
-        \(context.conversationHistory.isEmpty ? "No previous messages" : context.conversationHistory.joined(separator: "\n"))
-        
-        ## Calendar Server Capabilities:
-        This server can manage iOS calendar events with these tools:
-        \(toolDescriptions)
-        
-        ## User Message to Evaluate:
-        "\(message)"
-        
-        ## Evaluation Task:
-        Analyze the user's message and determine:
-        1. Can this Calendar Server help with the request?
-        2. What's the confidence level (0.0 to 1.0)?
-        3. Which tools would be most appropriate?
-        4. What's your reasoning?
-        
-        Consider these factors:
-        - Intent behind the message (explicit and implicit)
-        - Time/date references (absolute, relative, implied)
-        - Calendar-related actions (create, view, modify, delete events)
-        - Context from conversation history
-        - Natural language patterns beyond keywords
-        - User's probable needs and goals
-        
-        ## Response Format:
-        Respond with ONLY this JSON format:
-        {
-            "canHandle": true/false,
-            "confidence": 0.0-1.0,
-            "suggestedTools": ["tool1", "tool2"],
-            "reasoning": "Detailed explanation of analysis and decision"
-        }
-        
-        Be thorough in your analysis. Consider edge cases and implicit requests. Focus on user intent rather than specific keywords.
-        """
-        
-        logger.debug("📤 Evaluation prompt length: \(evaluationPrompt.count) chars")
-        
-        do {
-            let aiStartTime = CFAbsoluteTimeGetCurrent()
-            logger.info("🌐 Sending evaluation request to AI service...")
-            
-            let aiResponse = try await aiService.sendMessageWithoutContext(evaluationPrompt, configuration: configuration)
-            
-            let aiDuration = CFAbsoluteTimeGetCurrent() - aiStartTime
-            logger.info("✅ AI evaluation response received - Duration: \(String(format: "%.3f", aiDuration))s, Length: \(aiResponse.count) chars")
-            logger.debug("💬 Raw AI Response: \(aiResponse)")
-            
-            // Parse JSON response
-            if let jsonData = aiResponse.data(using: .utf8),
-               let jsonObject = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
-                
-                let canHandle = jsonObject["canHandle"] as? Bool ?? false
-                let confidence = jsonObject["confidence"] as? Double ?? 0.0
-                let suggestedTools = jsonObject["suggestedTools"] as? [String] ?? []
-                let reasoning = jsonObject["reasoning"] as? String ?? "AI evaluation completed"
-                
-                let totalDuration = CFAbsoluteTimeGetCurrent() - evaluationStartTime
-                logger.info("✅ JSON Parsing Success - CanHandle: \(canHandle), Confidence: \(String(format: "%.2f", confidence)), Tools: [\(suggestedTools.joined(separator: ", "))]")
-                logger.debug("🧠 AI Reasoning: \(reasoning)")
-                logger.info("⚡ Total Evaluation Time: \(String(format: "%.3f", totalDuration))s (AI: \(String(format: "%.3f", aiDuration))s, Processing: \(String(format: "%.3f", totalDuration - aiDuration))s)")
-                
-                return MCPCapabilityResult(
-                    canHandle: canHandle,
-                    confidence: confidence,
-                    suggestedTools: suggestedTools,
-                    reasoning: reasoning
-                )
-            } else {
-                logger.warning("⚠️ JSON parsing failed, attempting fallback parsing...")
-                logger.debug("🔍 Response content analysis: contains JSON braces: \(aiResponse.contains("{") && aiResponse.contains("}"))")
-                
-                // Fallback: try to parse a simpler response
-                let canHandle = aiResponse.lowercased().contains("\"canhandle\": true") || 
-                               aiResponse.lowercased().contains("can handle this request")
-                
-                // Extract confidence if possible
-                let confidenceRegex = try? NSRegularExpression(pattern: "\"confidence\":\\s*(\\d+\\.?\\d*)", options: [])
-                var confidence = 0.0
-                if let regex = confidenceRegex,
-                   let match = regex.firstMatch(in: aiResponse, options: [], range: NSRange(location: 0, length: aiResponse.count)),
-                   let confidenceRange = Range(match.range(at: 1), in: aiResponse) {
-                    confidence = Double(String(aiResponse[confidenceRange])) ?? 0.0
-                    logger.debug("🔢 Extracted confidence via regex: \(confidence)")
-                }
-                
-                let totalDuration = CFAbsoluteTimeGetCurrent() - evaluationStartTime
-                logger.info("🔄 Fallback Parsing Complete - CanHandle: \(canHandle), Confidence: \(String(format: "%.2f", confidence)), Duration: \(String(format: "%.3f", totalDuration))s")
-                
-                return MCPCapabilityResult(
-                    canHandle: canHandle,
-                    confidence: confidence,
-                    suggestedTools: canHandle ? ["create_event"] : [],
-                    reasoning: "AI analysis (fallback parsing): \(aiResponse.prefix(200))..."
-                )
-            }
-        } catch {
-            let errorDuration = CFAbsoluteTimeGetCurrent() - evaluationStartTime
-            logger.error("❌ AI evaluation failed after \(String(format: "%.3f", errorDuration))s: \(error.localizedDescription)")
-            logger.info("🔄 Falling back to basic keyword analysis...")
-            
-            // Fallback to basic analysis if AI fails
-            let keywords = ["calendar", "event", "meeting", "appointment", "schedule", "remind", "book"]
-            let messageLower = message.lowercased()
-            let matchedKeywords = keywords.filter { messageLower.contains($0) }
-            let hasCalendarIntent = !matchedKeywords.isEmpty
-            
-            logger.debug("🔍 Keyword analysis - Matched: [\(matchedKeywords.joined(separator: ", "))], Intent detected: \(hasCalendarIntent)")
-            
-            let totalDuration = CFAbsoluteTimeGetCurrent() - evaluationStartTime
-            logger.info("🔄 Basic Fallback Complete - CanHandle: \(hasCalendarIntent), Duration: \(String(format: "%.3f", totalDuration))s")
-            
-            return MCPCapabilityResult(
-                canHandle: hasCalendarIntent,
-                confidence: hasCalendarIntent ? 0.7 : 0.1,
-                suggestedTools: hasCalendarIntent ? ["create_event"] : [],
-                reasoning: "AI evaluation failed (\(error.localizedDescription)), used basic fallback analysis. Matched keywords: [\(matchedKeywords.joined(separator: ", "))]"
-            )
-        }
-    }
-    
+
     func getServerName() -> String {
         return "Calendar Server"
     }
