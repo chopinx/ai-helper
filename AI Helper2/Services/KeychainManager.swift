@@ -84,6 +84,70 @@ class KeychainManager {
     func hasAPIKey(for provider: String) -> Bool {
         return getAPIKey(for: provider) != nil
     }
+
+    // MARK: - Generic Data Storage (for settings that persist across reinstalls)
+
+    /// Save data to Keychain
+    func saveData(_ data: Data, for key: String) throws {
+        let account = "data-\(key)"
+
+        // Delete existing first
+        try? deleteData(for: key)
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+        ]
+
+        let status = SecItemAdd(query as CFDictionary, nil)
+
+        guard status == errSecSuccess else {
+            throw KeychainError.saveFailed(status)
+        }
+    }
+
+    /// Retrieve data from Keychain
+    func getData(for key: String) -> Data? {
+        let account = "data-\(key)"
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        guard status == errSecSuccess,
+              let data = result as? Data else {
+            return nil
+        }
+
+        return data
+    }
+
+    /// Delete data from Keychain
+    func deleteData(for key: String) throws {
+        let account = "data-\(key)"
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+
+        let status = SecItemDelete(query as CFDictionary)
+
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainError.deleteFailed(status)
+        }
+    }
 }
 
 // MARK: - Error Types

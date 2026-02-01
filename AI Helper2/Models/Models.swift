@@ -196,7 +196,6 @@ class ChatViewModel: ObservableObject {
     // Simple AI service (replaces complex orchestration)
     private let simpleAI = SimpleAIService()
     private let streamingService = StreamingService()
-    private let userDefaults = UserDefaults.standard
     private let configKey = "APIConfiguration"
 
     // Persistence
@@ -234,9 +233,9 @@ class ChatViewModel: ObservableObject {
     }
     
     func saveConfiguration() {
-        // Save non-sensitive config to UserDefaults
+        // Save config to Keychain (persists across reinstalls)
         if let encoded = try? JSONEncoder().encode(apiConfiguration) {
-            userDefaults.set(encoded, forKey: configKey)
+            try? KeychainManager.shared.saveData(encoded, for: configKey)
         }
 
         // Save API key to Keychain (secure storage)
@@ -249,8 +248,8 @@ class ChatViewModel: ObservableObject {
     }
 
     func loadConfiguration() {
-        // Load non-sensitive config from UserDefaults
-        if let data = userDefaults.data(forKey: configKey),
+        // Load config from Keychain (persists across reinstalls)
+        if let data = KeychainManager.shared.getData(for: configKey),
            let config = try? JSONDecoder().decode(APIConfiguration.self, from: data) {
             apiConfiguration = config
 

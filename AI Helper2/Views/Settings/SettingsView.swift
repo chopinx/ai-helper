@@ -4,6 +4,7 @@ struct SettingsView: View {
     @Binding var configuration: APIConfiguration
     @Environment(\.dismiss) private var dismiss
 
+    @State private var apiKeyText = ""
     @State private var isValidating = false
     @State private var validationResult: APIKeyValidationResult?
     @State private var validationTask: Task<Void, Never>?
@@ -25,9 +26,12 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .onAppear {
+                apiKeyText = configuration.apiKey
+            }
             .onDisappear {
-                if !configuration.apiKey.isEmpty {
-                    try? KeychainManager.shared.saveAPIKey(configuration.apiKey, for: configuration.provider.rawValue)
+                if !apiKeyText.isEmpty {
+                    try? KeychainManager.shared.saveAPIKey(apiKeyText, for: configuration.provider.rawValue)
                 }
             }
         }
@@ -42,11 +46,12 @@ struct SettingsView: View {
             }
             .pickerStyle(SegmentedPickerStyle())
             .onChange(of: configuration.provider) { oldProvider, newProvider in
-                if !configuration.apiKey.isEmpty {
-                    try? KeychainManager.shared.saveAPIKey(configuration.apiKey, for: oldProvider.rawValue)
+                if !apiKeyText.isEmpty {
+                    try? KeychainManager.shared.saveAPIKey(apiKeyText, for: oldProvider.rawValue)
                 }
                 configuration.model = newProvider.defaultModel
-                configuration.apiKey = KeychainManager.shared.getAPIKey(for: newProvider.rawValue) ?? ""
+                apiKeyText = KeychainManager.shared.getAPIKey(for: newProvider.rawValue) ?? ""
+                configuration.apiKey = apiKeyText
                 validationResult = nil
             }
         }
@@ -54,9 +59,11 @@ struct SettingsView: View {
 
     private var apiConfigSection: some View {
         Section("API Configuration") {
-            SecureField("API Key", text: $configuration.apiKey)
-                .textContentType(.password)
-                .onChange(of: configuration.apiKey) {
+            TextField("API Key", text: $apiKeyText)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .onChange(of: apiKeyText) {
+                    configuration.apiKey = apiKeyText
                     validationResult = nil
                     scheduleAutoValidation()
                 }
