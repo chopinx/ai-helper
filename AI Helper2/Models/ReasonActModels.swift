@@ -35,24 +35,3 @@ struct ReasonActStep: Identifiable {
     }
 }
 
-// MARK: - Error Types
-
-enum ReasonActError: Error, LocalizedError {
-    case consecutiveErrors(String)
-    case maxStepsReached
-    case toolHandlerNotConfigured
-    case contextCompressionFailed
-    
-    var errorDescription: String? {
-        switch self {
-        case .consecutiveErrors(let message):
-            return "Consecutive errors occurred: \(message)"
-        case .maxStepsReached:
-            return "Maximum reasoning steps reached"
-        case .toolHandlerNotConfigured:
-            return "Tool handler not configured"
-        case .contextCompressionFailed:
-            return "Context compression failed"
-        }
-    }
-}

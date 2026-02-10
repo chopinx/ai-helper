@@ -10,8 +10,9 @@ import Testing
 
 struct AI_Helper2Tests {
 
-    @Test func example() async throws {
-        // Write your test here and use APIs like `#expect(...)` to check expected conditions.
+    @Test func appModuleImports() {
+        // Verify the test target can import the main module
+        let provider = AIProvider.openai
+        #expect(provider.rawValue == "OpenAI")
     }
-
 }

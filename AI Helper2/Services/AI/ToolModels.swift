@@ -47,14 +47,6 @@ struct ToolResult {
     }
 }
 
-// MARK: - Tool Provider Protocol
-
-protocol ToolProvider {
-    var name: String { get }
-    func listTools() async throws -> [Tool]
-    func execute(name: String, arguments: [String: Any]) async throws -> String
-}
-
 // MARK: - OpenAI Format Conversion
 
 extension Tool {

@@ -52,6 +52,38 @@ enum AIProvider: String, CaseIterable, Codable {
     }
 }
 
+enum SystemPersona: String, CaseIterable, Codable {
+    case professional = "Professional"
+    case casual = "Casual"
+    case technical = "Technical"
+    case custom = "Custom"
+
+    var displayName: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .professional: return "briefcase"
+        case .casual: return "face.smiling"
+        case .technical: return "wrench.and.screwdriver"
+        case .custom: return "pencil"
+        }
+    }
+
+    /// The persona instruction prepended to the system prompt
+    var promptPrefix: String {
+        switch self {
+        case .professional:
+            return "You are a professional, concise, and business-oriented assistant. Use formal language, provide structured responses, and focus on actionable insights."
+        case .casual:
+            return "You are a friendly and approachable assistant. Use conversational language, be warm and encouraging, and explain things in simple terms."
+        case .technical:
+            return "You are a technical expert assistant. Provide detailed, precise answers with technical depth. Include relevant technical terminology and implementation details when appropriate."
+        case .custom:
+            return "" // Uses customSystemPrompt instead
+        }
+    }
+}
+
 enum MaxTokensOption: Int, CaseIterable {
     case low = 500
     case medium = 1000
@@ -79,19 +111,23 @@ struct APIConfiguration: Codable {
     var maxTokens: Int
     var temperature: Double
     var enableMCP: Bool
+    var systemPersona: SystemPersona
+    var customSystemPrompt: String
 
     // Exclude apiKey from Codable to avoid storing in UserDefaults
     enum CodingKeys: String, CodingKey {
-        case provider, model, maxTokens, temperature, enableMCP
+        case provider, model, maxTokens, temperature, enableMCP, systemPersona, customSystemPrompt
     }
 
-    init(provider: AIProvider = .openai, apiKey: String = "", model: String = "", maxTokens: Int = 1000, temperature: Double = 0.7, enableMCP: Bool = true) {
+    init(provider: AIProvider = .openai, apiKey: String = "", model: String = "", maxTokens: Int = 1000, temperature: Double = 0.7, enableMCP: Bool = true, systemPersona: SystemPersona = .professional, customSystemPrompt: String = "") {
         self.provider = provider
         self.apiKey = apiKey
         self.model = model.isEmpty ? provider.defaultModel : model
         self.maxTokens = maxTokens
         self.temperature = temperature
         self.enableMCP = enableMCP
+        self.systemPersona = systemPersona
+        self.customSystemPrompt = customSystemPrompt
     }
 
     init(from decoder: Decoder) throws {
@@ -101,6 +137,8 @@ struct APIConfiguration: Codable {
         maxTokens = try container.decode(Int.self, forKey: .maxTokens)
         temperature = try container.decode(Double.self, forKey: .temperature)
         enableMCP = try container.decode(Bool.self, forKey: .enableMCP)
+        systemPersona = try container.decodeIfPresent(SystemPersona.self, forKey: .systemPersona) ?? .professional
+        customSystemPrompt = try container.decodeIfPresent(String.self, forKey: .customSystemPrompt) ?? ""
         apiKey = "" // Will be loaded from Keychain separately
     }
 
@@ -111,6 +149,8 @@ struct APIConfiguration: Codable {
         try container.encode(maxTokens, forKey: .maxTokens)
         try container.encode(temperature, forKey: .temperature)
         try container.encode(enableMCP, forKey: .enableMCP)
+        try container.encode(systemPersona, forKey: .systemPersona)
+        try container.encode(customSystemPrompt, forKey: .customSystemPrompt)
         // apiKey is NOT encoded - stored in Keychain instead
     }
 }
@@ -120,12 +160,84 @@ struct ChatMessage: Identifiable, Codable {
     let content: String
     let isUser: Bool
     let timestamp: Date
-    
+    var errorType: ChatMessageError?
+    /// The original user prompt that triggered this error (for retry)
+    var failedPrompt: String?
+
     init(content: String, isUser: Bool) {
         self.id = UUID()
         self.content = content
         self.isUser = isUser
         self.timestamp = Date()
+    }
+
+    init(content: String, isUser: Bool, errorType: ChatMessageError, failedPrompt: String) {
+        self.id = UUID()
+        self.content = content
+        self.isUser = isUser
+        self.timestamp = Date()
+        self.errorType = errorType
+        self.failedPrompt = failedPrompt
+    }
+
+    var isError: Bool { errorType != nil }
+}
+
+enum ChatMessageError: String, Codable {
+    case network
+    case authentication
+    case rateLimit
+    case serverError
+    case unknown
+
+    var guidance: String {
+        switch self {
+        case .network:
+            return "Check your internet connection and try again."
+        case .authentication:
+            return "Your API key may be invalid. Check Settings."
+        case .rateLimit:
+            return "Rate limit reached. Wait a moment and retry."
+        case .serverError:
+            return "The AI service is experiencing issues. Try again later."
+        case .unknown:
+            return "An unexpected error occurred. Try again."
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .network: return "wifi.slash"
+        case .authentication: return "key.slash"
+        case .rateLimit: return "clock.badge.exclamationmark"
+        case .serverError: return "server.rack"
+        case .unknown: return "exclamationmark.triangle"
+        }
+    }
+
+    static func classify(_ error: Error) -> ChatMessageError {
+        let desc = error.localizedDescription.lowercased()
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotFindHost:
+                return .network
+            default:
+                break
+            }
+        }
+        if desc.contains("401") || desc.contains("unauthorized") || desc.contains("invalid api key") || desc.contains("authentication") {
+            return .authentication
+        }
+        if desc.contains("429") || desc.contains("rate limit") || desc.contains("too many requests") {
+            return .rateLimit
+        }
+        if desc.contains("500") || desc.contains("502") || desc.contains("503") || desc.contains("server") {
+            return .serverError
+        }
+        if desc.contains("network") || desc.contains("connection") || desc.contains("timeout") {
+            return .network
+        }
+        return .unknown
     }
 }
 
@@ -273,6 +385,7 @@ class ChatViewModel: ObservableObject {
             currentStatus = .loadingTools
             processTracker.reset()
             processTracker.currentPhase = .loadingTools
+            HapticManager.send()
             saveCurrentConversation()
         }
 
@@ -313,6 +426,7 @@ class ChatViewModel: ObservableObject {
                 messages.append(aiMessage)
                 isLoading = false
                 currentStatus = .completed
+                HapticManager.receive()
                 saveCurrentConversation()
             }
 
@@ -321,14 +435,37 @@ class ChatViewModel: ObservableObject {
             await updateStatus(.idle)
 
         } catch {
-            let errorMessage = ChatMessage(content: "Error: \(error.localizedDescription)", isUser: false)
+            let classified = ChatMessageError.classify(error)
+            let errorMessage = ChatMessage(
+                content: error.localizedDescription,
+                isUser: false,
+                errorType: classified,
+                failedPrompt: messageToSend
+            )
             await MainActor.run {
                 messages.append(errorMessage)
                 isLoading = false
                 currentStatus = .error(error.localizedDescription)
+                HapticManager.error()
                 saveCurrentConversation()
             }
         }
+    }
+
+    /// Retry sending a failed message
+    func retryMessage(_ message: ChatMessage) async {
+        guard let prompt = message.failedPrompt else { return }
+
+        // Remove the error message
+        await MainActor.run {
+            messages.removeAll { $0.id == message.id }
+        }
+
+        // Re-send
+        await MainActor.run {
+            currentMessage = prompt
+        }
+        await sendMessage()
     }
 
     @MainActor
@@ -616,263 +753,3 @@ class ChatViewModel: ObservableObject {
 
 }
 
-enum ChatError: LocalizedError {
-    case orchestratorUnavailable
-    case invalidConfiguration
-
-    var errorDescription: String? {
-        switch self {
-        case .orchestratorUnavailable:
-            return "Multi-role orchestrator is not available"
-        case .invalidConfiguration:
-            return "Invalid configuration"
-        }
-    }
-}
-
-// MARK: - Processing Status
-
-enum ProcessingStatus: Equatable {
-    case idle
-    case loadingTools
-    case thinkingStep(Int)
-    case callingTool(String)
-    case processingToolResult(String)
-    case generatingResponse
-    case completed
-    case error(String)
-
-    var displayText: String {
-        switch self {
-        case .idle:
-            return ""
-        case .loadingTools:
-            return "Loading tools..."
-        case .thinkingStep(let step):
-            return "Thinking (Step \(step))..."
-        case .callingTool(let toolName):
-            return "Calling \(toolName)..."
-        case .processingToolResult(let toolName):
-            return "Processing \(toolName)..."
-        case .generatingResponse:
-            return "Generating response..."
-        case .completed:
-            return "Done"
-        case .error(let message):
-            return "Error: \(message)"
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .idle:
-            return ""
-        case .loadingTools:
-            return "wrench.and.screwdriver"
-        case .thinkingStep:
-            return "brain"
-        case .callingTool:
-            return "hammer"
-        case .processingToolResult:
-            return "gearshape"
-        case .generatingResponse:
-            return "text.bubble"
-        case .completed:
-            return "checkmark.circle"
-        case .error:
-            return "exclamationmark.triangle"
-        }
-    }
-
-    var isActive: Bool {
-        switch self {
-        case .idle, .completed, .error:
-            return false
-        case .loadingTools, .thinkingStep, .callingTool, .processingToolResult, .generatingResponse:
-            return true
-        }
-    }
-
-    var stepNumber: Int? {
-        guard case .thinkingStep(let step) = self else { return nil }
-        return step
-    }
-
-    var isError: Bool {
-        guard case .error = self else { return false }
-        return true
-    }
-}
-
-// MARK: - Process Tracker (Dynamic UI)
-
-/// Tracks the entire processing workflow for dynamic UI display
-class ProcessTracker: ObservableObject {
-    @Published var iterations: [ProcessIteration] = []
-    @Published var currentPhase: ProcessPhase = .idle
-    @Published var toolsLoaded: [String] = []
-
-    func reset() {
-        iterations.removeAll()
-        currentPhase = .idle
-        toolsLoaded.removeAll()
-    }
-
-    func setToolsLoaded(_ tools: [String]) {
-        toolsLoaded = tools
-    }
-
-    func startIteration(_ number: Int) {
-        let iteration = ProcessIteration(number: number)
-        iterations.append(iteration)
-        currentPhase = .thinking
-    }
-
-    func addToolCall(name: String, isCalendar: Bool) {
-        guard var last = iterations.last else { return }
-        let toolCall = ToolCallRecord(name: name, isCalendar: isCalendar)
-        last.toolCalls.append(toolCall)
-        iterations[iterations.count - 1] = last
-        currentPhase = .callingTool(name)
-    }
-
-    func completeToolCall(name: String, success: Bool, message: String) {
-        guard var last = iterations.last,
-              let idx = last.toolCalls.lastIndex(where: { $0.name == name && $0.status == .running }) else { return }
-        last.toolCalls[idx].status = success ? .success : .failed
-        last.toolCalls[idx].resultPreview = String(message.prefix(100))
-        last.toolCalls[idx].endTime = Date()
-        iterations[iterations.count - 1] = last
-        currentPhase = .processingResult(name)
-    }
-
-    func completeIteration() {
-        guard var last = iterations.last else { return }
-        last.endTime = Date()
-        iterations[iterations.count - 1] = last
-    }
-
-    func setCompleted() {
-        currentPhase = .completed
-    }
-
-    func setError(_ message: String) {
-        currentPhase = .error(message)
-    }
-}
-
-enum ProcessPhase: Equatable {
-    case idle
-    case loadingTools
-    case thinking
-    case callingTool(String)
-    case processingResult(String)
-    case completed
-    case error(String)
-}
-
-struct ProcessIteration: Identifiable {
-    let id = UUID()
-    let number: Int
-    var toolCalls: [ToolCallRecord] = []
-    let startTime = Date()
-    var endTime: Date?
-
-    var duration: TimeInterval {
-        (endTime ?? Date()).timeIntervalSince(startTime)
-    }
-}
-
-struct ToolCallRecord: Identifiable {
-    let id = UUID()
-    let name: String
-    let isCalendar: Bool
-    var status: ToolCallStatus = .running
-    var resultPreview: String = ""
-    let startTime = Date()
-    var endTime: Date?
-
-    var duration: TimeInterval {
-        (endTime ?? Date()).timeIntervalSince(startTime)
-    }
-
-    var icon: String {
-        isCalendar ? "calendar" : "checkmark.circle"
-    }
-
-    var statusIcon: String {
-        switch status {
-        case .running: return "arrow.trianglehead.2.clockwise"
-        case .success: return "checkmark.circle.fill"
-        case .failed: return "xmark.circle.fill"
-        }
-    }
-
-    var statusColor: Color {
-        switch status {
-        case .running: return .blue
-        case .success: return .green
-        case .failed: return .red
-        }
-    }
-}
-
-enum ToolCallStatus {
-    case running
-    case success
-    case failed
-}
-
-// MARK: - Process Update Events (for SimpleAIService callbacks)
-
-enum ProcessUpdate {
-    case toolsLoaded([String])
-    case iterationStarted(Int)
-    case toolCallStarted(name: String, isCalendar: Bool)
-    case toolCallCompleted(name: String, success: Bool, message: String)
-    case iterationCompleted
-    case completed
-    case error(String)
-}
-
-// MARK: - Pending Action (Confirmation for delete/update)
-
-struct PendingAction: Identifiable {
-    let id = UUID()
-    let type: PendingActionType
-    let toolName: String
-    let arguments: [String: Any]
-    let title: String
-    let details: String
-    let isCalendar: Bool
-
-    var icon: String {
-        switch type {
-        case .delete: return "trash"
-        case .update: return "pencil"
-        case .complete: return "checkmark.circle"
-        }
-    }
-
-    var color: Color {
-        switch type {
-        case .delete: return .red
-        case .update: return .orange
-        case .complete: return .green
-        }
-    }
-
-    var actionText: String {
-        switch type {
-        case .delete: return "Delete"
-        case .update: return "Update"
-        case .complete: return "Complete"
-        }
-    }
-}
-
-enum PendingActionType {
-    case delete
-    case update
-    case complete
-}

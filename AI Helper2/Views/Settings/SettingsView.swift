@@ -16,6 +16,7 @@ struct SettingsView: View {
                 providerSection
                 apiConfigSection
                 parametersSection
+                personaSection
                 calendarSection
                 aboutSection
             }
@@ -92,6 +93,52 @@ struct SettingsView: View {
                     Text(String(format: "%.1f", configuration.temperature)).foregroundColor(.secondary)
                 }
                 Slider(value: $configuration.temperature, in: 0...2, step: 0.1)
+            }
+        }
+    }
+
+    private var personaSection: some View {
+        Section("System Persona") {
+            ForEach(SystemPersona.allCases, id: \.self) { persona in
+                Button {
+                    configuration.systemPersona = persona
+                } label: {
+                    HStack {
+                        Image(systemName: persona.icon)
+                            .frame(width: 24)
+                        Text(persona.displayName)
+                        Spacer()
+                        if configuration.systemPersona == persona {
+                            Image(systemName: "checkmark")
+                                .foregroundColor(.accentColor)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            if configuration.systemPersona == .custom {
+                TextEditor(text: $configuration.customSystemPrompt)
+                    .frame(minHeight: 80)
+                    .overlay(
+                        Group {
+                            if configuration.customSystemPrompt.isEmpty {
+                                Text("Enter custom system prompt...")
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 8)
+                                    .allowsHitTesting(false)
+                            }
+                        },
+                        alignment: .topLeading
+                    )
+            }
+
+            if configuration.systemPersona != .custom {
+                Text(configuration.systemPersona.promptPrefix)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         }
     }

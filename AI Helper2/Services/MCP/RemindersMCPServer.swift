@@ -114,29 +114,6 @@ class RemindersMCPServer: MCPServer {
         }
     }
 
-    // MARK: - Date Parsing
-
-    private func parseFlexibleDate(_ dateString: String) -> Date? {
-        // Try ISO8601
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = iso.date(from: dateString) { return date }
-        iso.formatOptions = [.withInternetDateTime]
-        if let date = iso.date(from: dateString) { return date }
-
-        // Try common formats
-        let formats = ["yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm", "yyyy-MM-dd'T'HH:mm"]
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = TimeZone.current
-
-        for format in formats {
-            df.dateFormat = format
-            if let date = df.date(from: dateString) { return date }
-        }
-        return nil
-    }
-
     // MARK: - Tool Implementations
 
     private func createReminder(arguments: [String: Any]) async throws -> MCPResult {

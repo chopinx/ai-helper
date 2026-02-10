@@ -17,24 +17,6 @@ struct MCPLogger {
         logger.debug("📄 Result Message: \(result.message)")
     }
     
-    static func logServerInitialization(server: String, success: Bool, error: Error? = nil) {
-        if success {
-            logger.info("🚀 MCP Server Initialized - \(server)")
-        } else {
-            logger.error("💥 MCP Server Init Failed - \(server): \(error?.localizedDescription ?? "Unknown error")")
-        }
-    }
-    
-    static func logRequestType(message: String, detectedType: String) {
-        logger.info("🤖 AI Request Analysis - Message: '\(message)' → Type: \(detectedType)")
-    }
-    
-    static func logAIExtraction(prompt: String, response: String, type: String) {
-        logger.debug("🧠 AI Extraction - Type: \(type)")
-        logger.debug("📝 Prompt: \(prompt)")
-        logger.debug("💭 Response: \(response)")
-    }
-    
     static func logError(context: String, error: Error) {
         logger.error("🚨 MCP Error - Context: \(context), Error: \(error.localizedDescription)")
     }
@@ -88,47 +70,53 @@ struct MCPResult {
     }
 }
 
-struct MCPCapabilityResult {
-    let canHandle: Bool
-    let confidence: Double // 0.0 to 1.0
-    let suggestedTools: [String]
-    let reasoning: String
+// MARK: - Shared Date Parsing
+
+/// Parse date string with multiple format support (used by Calendar and Reminders servers)
+func parseFlexibleDate(_ dateString: String) -> Date? {
+    // Try ISO8601 with timezone (e.g., "2026-02-01T10:00:00Z" or "2026-02-01T10:00:00+00:00")
+    let iso8601Formatter = ISO8601DateFormatter()
+    iso8601Formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = iso8601Formatter.date(from: dateString) { return date }
+
+    // Try ISO8601 without fractional seconds
+    iso8601Formatter.formatOptions = [.withInternetDateTime]
+    if let date = iso8601Formatter.date(from: dateString) { return date }
+
+    // Try common date formats
+    let formats = [
+        "yyyy-MM-dd'T'HH:mm:ss",
+        "yyyy-MM-dd HH:mm:ss",
+        "yyyy-MM-dd HH:mm",
+        "yyyy-MM-dd'T'HH:mm",
+        "yyyy/MM/dd HH:mm:ss",
+        "yyyy/MM/dd HH:mm",
+        "MM/dd/yyyy HH:mm",
+        "dd-MM-yyyy HH:mm"
+    ]
+
+    let dateFormatter = DateFormatter()
+    dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+    dateFormatter.timeZone = TimeZone.current
+
+    for format in formats {
+        dateFormatter.dateFormat = format
+        if let date = dateFormatter.date(from: dateString) { return date }
+    }
+
+    return nil
 }
 
-struct MCPEvaluationStep {
-    let serverName: String
-    let step: String
-    let details: String
-    let timestamp: Date
-}
-
-struct MCPEvaluationContext {
-    let currentDate: Date
-    let timeZone: TimeZone
-    let locale: Locale
-    let conversationHistory: [String] // Recent messages for context
-    let userPreferences: [String: Any] // User settings and preferences
-    let deviceInfo: [String: String] // Device and app context
-}
-
-struct MCPEvaluationResult {
-    let message: String
-    let evaluationSteps: [MCPEvaluationStep]
-    let selectedServers: [String: MCPCapabilityResult]
-    let executionResults: [String: MCPResult]
-}
+// MARK: - MCP Error
 
 enum MCPError: Error, LocalizedError {
-    case serverNotInitialized
     case toolNotFound(String)
     case invalidArguments(String)
     case permissionDenied(String)
     case operationFailed(String)
-    
+
     var errorDescription: String? {
         switch self {
-        case .serverNotInitialized:
-            return "MCP server not initialized"
         case .toolNotFound(let tool):
             return "Tool not found: \(tool)"
         case .invalidArguments(let message):
@@ -138,132 +126,5 @@ enum MCPError: Error, LocalizedError {
         case .operationFailed(let message):
             return "Operation failed: \(message)"
         }
-    }
-}
-
-class MCPManager: ObservableObject {
-    @Published var isCalendarEnabled = false
-    @Published var evaluationSteps: [MCPEvaluationStep] = []
-    @Published var showEvaluationDetails = false
-    
-    private var calendarServer: MCPServer?
-    private var registeredServers: [String: MCPServer] = [:]
-    
-    var availableServers: [String: MCPServer] {
-        return registeredServers
-    }
-    
-    /// Get all MCP tools converted to universal Tool format
-    func getAllTools() async -> [Tool] {
-        var allTools: [Tool] = []
-
-        for (serverName, server) in registeredServers {
-            do {
-                let mcpTools = try await server.listTools()
-                let tools = mcpTools.map { $0.toTool() }
-                allTools.append(contentsOf: tools)
-            } catch {
-                MCPLogger.logError(context: "Getting tools from \(serverName)", error: error)
-            }
-        }
-
-        return allTools
-    }
-    
-    /// Execute a tool call from native API tool calling
-    func executeToolCall(toolName: String, arguments: [String: Any]) async throws -> MCPResult {
-        // Find which server has this tool
-        for (serverName, server) in registeredServers {
-            do {
-                let tools = try await server.listTools()
-                if tools.contains(where: { $0.name == toolName }) {
-                    MCPLogger.logToolCall(server: serverName, tool: toolName, arguments: arguments)
-                    let startTime = CFAbsoluteTimeGetCurrent()
-                    
-                    let result = try await server.callTool(name: toolName, arguments: arguments)
-                    
-                    let duration = CFAbsoluteTimeGetCurrent() - startTime
-                    MCPLogger.logToolResult(server: serverName, tool: toolName, result: result, duration: duration)
-                    
-                    return result
-                }
-            } catch {
-                MCPLogger.logError(context: "Checking tools for \(serverName)", error: error)
-                continue
-            }
-        }
-        
-        throw MCPError.toolNotFound(toolName)
-    }
-    
-    func registerServer(_ server: MCPServer, name: String) {
-        registeredServers[name] = server
-        
-        // Keep backward compatibility for calendar
-        if name == "calendar" {
-            calendarServer = server
-        }
-        
-        Task {
-            do {
-                try await server.initialize()
-                MCPLogger.logServerInitialization(server: name, success: true)
-                await MainActor.run {
-                    if name == "calendar" {
-                        isCalendarEnabled = true
-                    }
-                }
-            } catch {
-                MCPLogger.logServerInitialization(server: name, success: false, error: error)
-                MCPLogger.logError(context: "\(name) server initialization", error: error)
-            }
-        }
-    }
-    
-    func enableCalendarIntegration(_ server: MCPServer) {
-        registerServer(server, name: "calendar")
-    }
-    
-    func createCalendarEvent(title: String, startDate: Date, endDate: Date, notes: String? = nil) async throws -> MCPResult {
-        guard let server = calendarServer else {
-            throw MCPError.serverNotInitialized
-        }
-        
-        let arguments: [String: Any] = [
-            "title": title,
-            "start_date": ISO8601DateFormatter().string(from: startDate),
-            "end_date": ISO8601DateFormatter().string(from: endDate),
-            "notes": notes ?? ""
-        ]
-        
-        MCPLogger.logToolCall(server: "calendar", tool: "create_event", arguments: arguments)
-        let startTime = CFAbsoluteTimeGetCurrent()
-        
-        do {
-            let result = try await server.callTool(name: "create_event", arguments: arguments)
-            let duration = CFAbsoluteTimeGetCurrent() - startTime
-            MCPLogger.logToolResult(server: "calendar", tool: "create_event", result: result, duration: duration)
-            return result
-        } catch {
-            _ = CFAbsoluteTimeGetCurrent() - startTime
-            MCPLogger.logError(context: "create_event tool call", error: error)
-            throw error
-        }
-    }
-    
-    /// Get all available tool names for debugging
-    private func getAllAvailableToolNames() async -> [String] {
-        var toolNames: [String] = []
-        
-        for (_, server) in registeredServers {
-            do {
-                let tools = try await server.listTools()
-                toolNames.append(contentsOf: tools.map { $0.name })
-            } catch {
-                // Ignore errors for this debug function
-            }
-        }
-        
-        return toolNames
     }
 }

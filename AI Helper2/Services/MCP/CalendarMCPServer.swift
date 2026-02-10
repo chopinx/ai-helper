@@ -165,49 +165,6 @@ class CalendarMCPServer: MCPServer {
         }
     }
 
-    // MARK: - Date Parsing Helper
-
-    /// Parse date string with multiple format support
-    private func parseFlexibleDate(_ dateString: String) -> Date? {
-        // Try ISO8601 with timezone (e.g., "2026-02-01T10:00:00Z" or "2026-02-01T10:00:00+00:00")
-        let iso8601Formatter = ISO8601DateFormatter()
-        iso8601Formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = iso8601Formatter.date(from: dateString) {
-            return date
-        }
-
-        // Try ISO8601 without fractional seconds
-        iso8601Formatter.formatOptions = [.withInternetDateTime]
-        if let date = iso8601Formatter.date(from: dateString) {
-            return date
-        }
-
-        // Try common date formats
-        let formats = [
-            "yyyy-MM-dd'T'HH:mm:ss",      // 2026-02-01T10:00:00
-            "yyyy-MM-dd HH:mm:ss",         // 2026-02-01 10:00:00
-            "yyyy-MM-dd HH:mm",            // 2026-02-01 10:00
-            "yyyy-MM-dd'T'HH:mm",          // 2026-02-01T10:00
-            "yyyy/MM/dd HH:mm:ss",         // 2026/02/01 10:00:00
-            "yyyy/MM/dd HH:mm",            // 2026/02/01 10:00
-            "MM/dd/yyyy HH:mm",            // 02/01/2026 10:00
-            "dd-MM-yyyy HH:mm"             // 01-02-2026 10:00
-        ]
-
-        let dateFormatter = DateFormatter()
-        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
-        dateFormatter.timeZone = TimeZone.current
-
-        for format in formats {
-            dateFormatter.dateFormat = format
-            if let date = dateFormatter.date(from: dateString) {
-                return date
-            }
-        }
-
-        return nil
-    }
-
     // MARK: - Tool Implementations
 
     private func createEvent(arguments: [String: Any]) async throws -> MCPResult {

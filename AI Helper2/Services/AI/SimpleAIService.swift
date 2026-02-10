@@ -43,7 +43,7 @@ class SimpleAIService {
         onProcessUpdate?(.toolsLoaded(tools.map { $0.name }))
 
         // Build initial messages
-        var messages = buildMessages(history: history, currentMessage: message)
+        var messages = buildMessages(history: history, currentMessage: message, config: config)
         var eventMetadata: [String: String]? = nil
         var iteration = 0
 
@@ -197,16 +197,26 @@ class SimpleAIService {
         }
     }
 
-    private func buildMessages(history: [ChatMessage], currentMessage: String) -> [[String: Any]] {
+    private func buildMessages(history: [ChatMessage], currentMessage: String, config: APIConfiguration) -> [[String: Any]] {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd"
         let today = df.string(from: Date())
         df.dateFormat = "HH:mm"
         let time = df.string(from: Date())
 
+        // Build persona prefix
+        let personaInstruction: String
+        if config.systemPersona == .custom {
+            personaInstruction = config.customSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            personaInstruction = config.systemPersona.promptPrefix
+        }
+
         var messages: [[String: Any]] = [[
             "role": "system",
             "content": """
+            \(personaInstruction)
+
             You are an intelligent AI assistant that follows a structured workflow to complete tasks.
 
             # WORKFLOW: ReAct Loop (Review → Plan → Execute → Validate)
@@ -243,7 +253,7 @@ class SimpleAIService {
 
             # AVAILABLE SUB-AGENTS
 
-            ## 📅 Calendar Secretary
+            ## Calendar Secretary
             Triggers: scheduling, meetings, events, appointments, calendar queries
             Tools: list_events, create_event, update_event, delete_event, search_events
             Behaviors:
@@ -252,7 +262,7 @@ class SimpleAIService {
             - Warn about conflicts
             - Summarize workload (e.g., "4 meetings, 5 hours total")
 
-            ## ✅ Reminders Manager
+            ## Reminders Manager
             Triggers: reminders, todos, tasks, to-do list, things to do, remind me
             Tools: create_reminder, list_reminders, complete_reminder, delete_reminder, search_reminders, get_today_reminders, get_overdue_reminders
             Behaviors:
@@ -263,7 +273,7 @@ class SimpleAIService {
             - Use get_today_reminders for daily task review
             - Use get_overdue_reminders to find missed tasks
 
-            ## 💬 General Assistant
+            ## General Assistant
             Triggers: general questions, conversation, advice
             No tools needed - respond directly
 

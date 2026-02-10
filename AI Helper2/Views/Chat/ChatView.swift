@@ -3,6 +3,7 @@ import SwiftUI
 struct ChatView: View {
     @StateObject private var viewModel = ChatViewModel()
     @StateObject private var voiceManager = VoiceInputManager()
+    @StateObject private var networkMonitor = NetworkMonitor.shared
     @State private var showingSettings = false
 
     var body: some View {
@@ -68,6 +69,10 @@ struct ChatView: View {
 
     private var chatContent: some View {
         VStack(spacing: 0) {
+            if !networkMonitor.isConnected {
+                NetworkBanner()
+            }
+
             if viewModel.apiConfiguration.apiKey.isEmpty {
                 APIKeyWarningBanner(showSettings: $showingSettings)
             }
@@ -80,7 +85,11 @@ struct ChatView: View {
                                 .padding(.horizontal).padding(.top)
                         }
                         ForEach(viewModel.messages) { message in
-                            MessageBubble(message: message).id(message.id)
+                            MessageBubble(
+                                message: message,
+                                onRetry: message.isError ? { Task { await viewModel.retryMessage(message) } } : nil
+                            )
+                            .id(message.id)
                         }
                         if viewModel.isLoading && !viewModel.streamingText.isEmpty {
                             MessageBubble(message: ChatMessage(content: viewModel.streamingText, isUser: false))
@@ -312,21 +321,49 @@ struct ChatInputView: View {
     }
 }
 
+// MARK: - Network Banner
+
+struct NetworkBanner: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "wifi.slash")
+                .foregroundColor(.white)
+                .font(.caption)
+            Text("No internet connection")
+                .font(.caption)
+                .foregroundColor(.white)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .background(Color.red)
+    }
+}
+
 // MARK: - Message Bubble
 
 struct MessageBubble: View {
     let message: ChatMessage
+    var onRetry: (() -> Void)?
 
     var body: some View {
         HStack {
             if message.isUser { Spacer() }
 
             VStack(alignment: message.isUser ? .trailing : .leading, spacing: 8) {
-                Text(cleanedContent)
-                    .padding(12)
-                    .background(message.isUser ? Color.blue : Color(.systemGray5))
-                    .foregroundColor(message.isUser ? .white : .primary)
-                    .cornerRadius(16)
+                if let errorType = message.errorType {
+                    // Error message with guidance and retry
+                    ErrorMessageView(
+                        errorType: errorType,
+                        content: cleanedContent,
+                        onRetry: onRetry
+                    )
+                } else {
+                    Text(cleanedContent)
+                        .padding(12)
+                        .background(message.isUser ? Color.blue : Color(.systemGray5))
+                        .foregroundColor(message.isUser ? .white : .primary)
+                        .cornerRadius(16)
+                }
 
                 if let eventInfo = calendarEventInfo {
                     CalendarEventButton(eventInfo: eventInfo)
@@ -382,6 +419,49 @@ struct MessageBubble: View {
             dueDate: Date(timeIntervalSince1970: TimeInterval(Int(message.content[r3]) ?? 0)),
             action: String(message.content[r4])
         )
+    }
+}
+
+// MARK: - Error Message View
+
+struct ErrorMessageView: View {
+    let errorType: ChatMessageError
+    let content: String
+    var onRetry: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: errorType.icon)
+                    .foregroundColor(.red)
+                    .font(.caption)
+                Text(content)
+                    .font(.subheadline)
+                    .foregroundColor(.primary)
+            }
+
+            Text(errorType.guidance)
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            if let onRetry {
+                Button(action: onRetry) {
+                    Label("Retry", systemImage: "arrow.clockwise")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(.blue)
+            }
+        }
+        .padding(12)
+        .background(Color.red.opacity(0.08))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.red.opacity(0.3), lineWidth: 1)
+        )
+        .cornerRadius(12)
     }
 }
 
