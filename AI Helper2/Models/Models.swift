@@ -264,29 +264,19 @@ struct SuggestedPrompt: Identifiable, Codable {
 }
 
 enum PromptCategory: String, CaseIterable, Codable {
-    case calendar = "日程管理"
-    case productivity = "工作效率"
-    case creative = "创意写作"
-    case analysis = "数据分析"
-    case learning = "学习助手"
-
-    var color: String {
-        switch self {
-        case .calendar: return "blue"
-        case .productivity: return "green"
-        case .creative: return "purple"
-        case .analysis: return "orange"
-        case .learning: return "red"
-        }
-    }
+    case calendar = "Calendar"
+    case productivity = "Productivity"
+    case creative = "Creative Writing"
+    case analysis = "Data Analysis"
+    case learning = "Learning"
 
     var swiftColor: SwiftUI.Color {
         switch self {
-        case .calendar: return .blue
-        case .productivity: return .green
+        case .calendar: return DS.Colors.accent
+        case .productivity: return DS.Colors.success
         case .creative: return .purple
-        case .analysis: return .orange
-        case .learning: return .red
+        case .analysis: return DS.Colors.warning
+        case .learning: return DS.Colors.error
         }
     }
 }
@@ -575,100 +565,100 @@ class ChatViewModel: ObservableObject {
         suggestedPrompts = [
             // Calendar Management
             SuggestedPrompt(
-                title: "创建会议",
-                prompt: "帮我安排明天下午2点的团队会议，主题是项目进展讨论，时长2小时",
+                title: "Create Meeting",
+                prompt: "Schedule a team meeting tomorrow at 2 PM to discuss project progress, duration 2 hours",
                 category: .calendar,
                 icon: "calendar.badge.plus"
             ),
             SuggestedPrompt(
-                title: "查看日程",
-                prompt: "查看我本周的日程安排，告诉我有哪些重要的会议和任务",
+                title: "View Schedule",
+                prompt: "Show my schedule for this week and highlight important meetings and tasks",
                 category: .calendar,
                 icon: "calendar"
             ),
             SuggestedPrompt(
-                title: "设置提醒",
-                prompt: "提醒我每天上午9点开始工作，下午6点结束工作",
+                title: "Set Reminder",
+                prompt: "Remind me to start work at 9 AM and finish at 6 PM every day",
                 category: .calendar,
                 icon: "bell"
             ),
-            
+
             // Productivity
             SuggestedPrompt(
-                title: "任务规划",
-                prompt: "帮我制定一个完成项目报告的详细计划，包括时间安排和具体步骤",
+                title: "Task Planning",
+                prompt: "Help me create a detailed plan to complete a project report, including timeline and steps",
                 category: .productivity,
                 icon: "checklist"
             ),
             SuggestedPrompt(
-                title: "时间管理",
-                prompt: "分析我的工作习惯，给出提高效率的建议，特别是时间分配方面",
+                title: "Time Management",
+                prompt: "Analyze my work habits and suggest ways to improve efficiency, especially time allocation",
                 category: .productivity,
                 icon: "clock"
             ),
             SuggestedPrompt(
-                title: "邮件模板",
-                prompt: "帮我写一封专业的项目进展汇报邮件给客户，包含本月完成的工作和下月计划",
+                title: "Email Template",
+                prompt: "Write a professional project progress email to a client covering this month's work and next month's plan",
                 category: .productivity,
                 icon: "envelope"
             ),
-            
+
             // Creative Writing
             SuggestedPrompt(
-                title: "创意文案",
-                prompt: "为我们公司的新产品写一份吸引人的营销文案，突出产品的创新特点",
+                title: "Marketing Copy",
+                prompt: "Write compelling marketing copy for our new product, highlighting its innovative features",
                 category: .creative,
                 icon: "pencil.and.outline"
             ),
             SuggestedPrompt(
-                title: "故事创作",
-                prompt: "创作一个关于人工智能如何改变日常生活的短故事，要有趣且富有想象力",
+                title: "Story Writing",
+                prompt: "Write a short story about how AI is changing everyday life, make it fun and imaginative",
                 category: .creative,
                 icon: "book"
             ),
             SuggestedPrompt(
-                title: "演讲稿",
-                prompt: "帮我准备一份关于团队合作重要性的5分钟演讲稿，包含实际案例",
+                title: "Speech Draft",
+                prompt: "Prepare a 5-minute speech on the importance of teamwork, with real-world examples",
                 category: .creative,
                 icon: "mic"
             ),
-            
+
             // Data Analysis
             SuggestedPrompt(
-                title: "数据解读",
-                prompt: "分析用户反馈数据，找出产品改进的关键点和优先级",
+                title: "Data Insights",
+                prompt: "Analyze user feedback data and identify key areas for product improvement and priorities",
                 category: .analysis,
                 icon: "chart.bar"
             ),
             SuggestedPrompt(
-                title: "趋势分析",
-                prompt: "基于市场数据分析当前行业趋势，预测未来6个月的发展方向",
+                title: "Trend Analysis",
+                prompt: "Analyze current industry trends from market data and forecast the next 6 months",
                 category: .analysis,
                 icon: "chart.line.uptrend.xyaxis"
             ),
             SuggestedPrompt(
-                title: "报告总结",
-                prompt: "总结季度销售报告的关键指标，突出亮点和需要改进的地方",
+                title: "Report Summary",
+                prompt: "Summarize the quarterly sales report's key metrics, highlighting strengths and areas to improve",
                 category: .analysis,
                 icon: "doc.text"
             ),
-            
+
             // Learning Assistant
             SuggestedPrompt(
-                title: "知识解释",
-                prompt: "用简单易懂的方式解释机器学习的基本概念，包含实际应用例子",
+                title: "Explain Concepts",
+                prompt: "Explain the basics of machine learning in simple terms, with practical examples",
                 category: .learning,
                 icon: "brain.head.profile"
             ),
             SuggestedPrompt(
-                title: "学习计划",
-                prompt: "制定一个3个月的iOS开发学习计划，包括学习资源和里程碑",
+                title: "Learning Plan",
+                prompt: "Create a 3-month iOS development learning plan with resources and milestones",
                 category: .learning,
                 icon: "graduationcap"
             ),
             SuggestedPrompt(
-                title: "技能提升",
-                prompt: "推荐提高沟通技巧的方法和练习，适合职场环境",
+                title: "Skill Building",
+                prompt: "Recommend methods and exercises to improve communication skills in the workplace",
                 category: .learning,
                 icon: "person.2"
             )

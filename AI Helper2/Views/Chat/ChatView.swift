@@ -12,7 +12,7 @@ struct ChatView: View {
                 if viewModel.isReasonActMode && !viewModel.reasonActSteps.isEmpty {
                     ReasonActTimelineView(steps: viewModel.reasonActSteps)
                         .frame(maxHeight: 200)
-                        .background(Color(.systemGray6))
+                        .background(DS.Colors.groupedBackground)
                 }
                 chatContent
             }
@@ -45,23 +45,33 @@ struct ChatView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .navigationBarTrailing) {
-            HStack {
+            HStack(spacing: 12) {
                 if !viewModel.messages.isEmpty {
                     Button { viewModel.clearConversation() } label: {
-                        Image(systemName: "trash").foregroundColor(.red)
+                        Image(systemName: "trash")
+                            .foregroundColor(DS.Colors.error)
                     }
+                    .accessibilityLabel("Clear conversation")
                 }
-                Button("Settings") { showingSettings = true }
+                Button { showingSettings = true } label: {
+                    Image(systemName: "gearshape")
+                }
+                .accessibilityLabel("Settings")
             }
         }
         ToolbarItem(placement: .navigationBarLeading) {
-            HStack {
-                Button(viewModel.isReasonActMode ? "💭" : "🔧") { viewModel.toggleReasonActMode() }
+            HStack(spacing: 12) {
+                Button { viewModel.toggleReasonActMode() } label: {
+                    Image(systemName: viewModel.isReasonActMode ? "bubble.left.and.text.bubble.right" : "wrench.and.screwdriver")
+                }
+                .accessibilityLabel(viewModel.isReasonActMode ? "Switch to simple mode" : "Switch to reason-act mode")
+
                 if viewModel.messages.isEmpty {
                     Button { viewModel.toggleSuggestedPrompts() } label: {
                         Image(systemName: viewModel.shouldShowSuggestedPrompts ? "lightbulb.fill" : "lightbulb")
-                            .foregroundColor(.orange)
+                            .foregroundColor(DS.Colors.warning)
                     }
+                    .accessibilityLabel(viewModel.shouldShowSuggestedPrompts ? "Hide suggested prompts" : "Show suggested prompts")
                 }
             }
         }
@@ -80,6 +90,11 @@ struct ChatView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
+                        if viewModel.messages.isEmpty && !viewModel.shouldShowSuggestedPrompts {
+                            EmptyChatView()
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 60)
+                        }
                         if viewModel.shouldShowSuggestedPrompts {
                             SuggestedPromptsView(viewModel: viewModel)
                                 .padding(.horizontal).padding(.top)
@@ -134,24 +149,18 @@ struct APIKeyWarningBanner: View {
     @Binding var showSettings: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange).font(.title3)
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: DS.Spacing.lg) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundColor(DS.Colors.warning).font(.title3)
+            VStack(alignment: .leading, spacing: DS.Spacing.xs) {
                 Text("API Key Required").font(.subheadline).fontWeight(.semibold)
                 Text("Configure your API key in Settings to start chatting").font(.caption).foregroundColor(.secondary)
             }
             Spacer()
             Button("Settings") { showSettings = true }
-                .font(.subheadline).fontWeight(.medium)
-                .foregroundColor(.white)
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(Color.blue).cornerRadius(8)
+                .buttonStyle(PillButtonStyle())
         }
-        .padding(12)
-        .background(Color.orange.opacity(0.1))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.3), lineWidth: 1))
-        .cornerRadius(10)
-        .padding(.horizontal).padding(.top, 8)
+        .bannerStyle(tintColor: DS.Colors.warning)
+        .padding(.horizontal).padding(.top, DS.Spacing.md)
     }
 }
 
@@ -162,7 +171,7 @@ struct DynamicProcessView: View {
     @ObservedObject var tracker: ProcessTracker
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DS.Spacing.md) {
             // Spinner
             ProgressView().scaleEffect(0.7)
 
@@ -171,8 +180,8 @@ struct DynamicProcessView: View {
                 Text("Step \(tracker.iterations.count)")
                     .font(.caption2).fontWeight(.semibold)
                     .foregroundColor(.white)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Color.blue).cornerRadius(6)
+                    .padding(.horizontal, DS.Spacing.sm + 2).padding(.vertical, DS.Spacing.xs)
+                    .background(DS.Colors.accent).cornerRadius(DS.CornerRadius.small)
             }
 
             // Current action
@@ -184,9 +193,9 @@ struct DynamicProcessView: View {
             Spacer()
 
             // Tool call badges
-            HStack(spacing: 4) {
+            HStack(spacing: DS.Spacing.sm) {
                 ForEach(recentToolCalls.prefix(3)) { tool in
-                    HStack(spacing: 2) {
+                    HStack(spacing: DS.Spacing.xs) {
                         Image(systemName: tool.statusIcon)
                             .foregroundColor(tool.statusColor)
                             .font(.system(size: 8))
@@ -194,15 +203,15 @@ struct DynamicProcessView: View {
                             .font(.caption2)
                             .foregroundColor(.primary)
                     }
-                    .padding(.horizontal, 4).padding(.vertical, 2)
-                    .background(Color(.systemGray5))
-                    .cornerRadius(4)
+                    .padding(.horizontal, DS.Spacing.sm).padding(.vertical, DS.Spacing.xs)
+                    .background(DS.Colors.aiBubble)
+                    .cornerRadius(DS.Spacing.sm)
                 }
             }
         }
-        .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(Color(.systemGray6))
-        .cornerRadius(8)
+        .padding(.horizontal, DS.Spacing.lg).padding(.vertical, DS.Spacing.md)
+        .background(DS.Colors.groupedBackground)
+        .cornerRadius(DS.Spacing.md)
     }
 
     private var compactStatus: String {
@@ -261,18 +270,18 @@ struct ReasonActStepView: View {
                 HStack(spacing: 4) {
                     Text(exec.statusIcon).font(.caption2)
                     Text(exec.toolName).font(.caption2).fontWeight(.medium)
-                        .foregroundColor(exec.isError ? .red : .green)
+                        .foregroundColor(exec.isError ? DS.Colors.error : DS.Colors.success)
                     Text(exec.durationString).font(.caption2).foregroundColor(.secondary)
                 }
             }
 
             if step.toolExecutions.isEmpty {
-                Label("Thinking...", systemImage: "brain").font(.caption2).foregroundColor(.blue).italic()
+                Label("Thinking...", systemImage: "brain").font(.caption2).foregroundColor(DS.Colors.accent).italic()
             }
         }
-        .padding(8)
-        .background(Color(.systemBackground))
-        .cornerRadius(8)
+        .padding(DS.Spacing.md)
+        .background(DS.Colors.surface)
+        .cornerRadius(DS.Spacing.md)
         .shadow(radius: 1)
         .frame(width: 120)
     }
@@ -311,17 +320,19 @@ struct ChatInputView: View {
                         }
                     } label: {
                         Image(systemName: voiceManager.isRecording ? "mic.fill" : "mic")
-                            .foregroundColor(voiceManager.isRecording ? .red : .blue)
+                            .foregroundColor(voiceManager.isRecording ? DS.Colors.error : DS.Colors.accent)
                             .font(.title2)
                     }
+                    .accessibilityLabel(voiceManager.isRecording ? "Stop recording" : "Start voice input")
                     .padding(.trailing, 4)
                 }
             }
 
             Button(action: sendAction) {
-                Image(systemName: "paperplane.fill").foregroundColor(canSend ? .blue : .gray)
+                Image(systemName: "paperplane.fill").foregroundColor(canSend ? DS.Colors.accent : .gray)
             }
             .disabled(!canSend)
+            .accessibilityLabel("Send message")
         }
         .padding()
     }
@@ -331,7 +342,7 @@ struct ChatInputView: View {
 
 struct NetworkBanner: View {
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DS.Spacing.md) {
             Image(systemName: "wifi.slash")
                 .foregroundColor(.white)
                 .font(.caption)
@@ -340,8 +351,8 @@ struct NetworkBanner: View {
                 .foregroundColor(.white)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
-        .background(Color.red)
+        .padding(.vertical, DS.Spacing.sm + 2)
+        .background(DS.Colors.error)
     }
 }
 
@@ -507,8 +518,8 @@ struct CodeBlockView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.systemGray6))
-        .cornerRadius(8)
+        .background(DS.Colors.groupedBackground)
+        .cornerRadius(DS.Spacing.md)
     }
 }
 
@@ -532,16 +543,16 @@ struct MessageBubble: View {
                     )
                 } else if message.isUser {
                     Text(cleanedContent)
-                        .padding(12)
-                        .background(Color.blue)
+                        .padding(DS.Spacing.lg)
+                        .background(DS.Colors.accent)
                         .foregroundColor(.white)
-                        .cornerRadius(16)
+                        .cornerRadius(DS.CornerRadius.bubble)
                 } else {
                     MarkdownContentView(content: cleanedContent)
-                        .padding(12)
-                        .background(Color(.systemGray5))
+                        .padding(DS.Spacing.lg)
+                        .background(DS.Colors.aiBubble)
                         .foregroundColor(.primary)
-                        .cornerRadius(16)
+                        .cornerRadius(DS.CornerRadius.bubble)
                 }
 
                 if let eventInfo = calendarEventInfo {
@@ -609,10 +620,10 @@ struct ErrorMessageView: View {
     var onRetry: (() -> Void)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: DS.Spacing.md) {
+            HStack(spacing: DS.Spacing.sm + 2) {
                 Image(systemName: errorType.icon)
-                    .foregroundColor(.red)
+                    .foregroundColor(DS.Colors.error)
                     .font(.caption)
                 Text(content)
                     .font(.subheadline)
@@ -631,16 +642,10 @@ struct ErrorMessageView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
-                .tint(.blue)
+                .tint(DS.Colors.accent)
             }
         }
-        .padding(12)
-        .background(Color.red.opacity(0.08))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.red.opacity(0.3), lineWidth: 1)
-        )
-        .cornerRadius(12)
+        .bannerStyle(tintColor: DS.Colors.error)
     }
 }
 
@@ -658,19 +663,19 @@ struct CalendarEventButton: View {
 
     var body: some View {
         Button(action: openCalendarEvent) {
-            HStack(spacing: 8) {
-                Image(systemName: "calendar").foregroundColor(.blue)
-                VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: DS.Spacing.md) {
+                Image(systemName: "calendar").foregroundColor(DS.Colors.accent)
+                VStack(alignment: .leading, spacing: DS.Spacing.xs) {
                     Text(eventInfo.title).font(.subheadline).fontWeight(.medium)
                     Text(eventInfo.startDate, style: .date).font(.caption).foregroundColor(.secondary)
                 }
                 Spacer()
                 Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
             }
-            .padding(10)
-            .background(Color(.systemBackground))
-            .cornerRadius(10)
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.blue.opacity(0.3), lineWidth: 1))
+            .padding(DS.Spacing.lg)
+            .background(DS.Colors.surface)
+            .cornerRadius(DS.CornerRadius.medium)
+            .overlay(RoundedRectangle(cornerRadius: DS.CornerRadius.medium).stroke(DS.Colors.tint(DS.Colors.accent, opacity: 0.3), lineWidth: 1))
         }
         .buttonStyle(PlainButtonStyle())
     }
@@ -696,9 +701,9 @@ struct ReminderButton: View {
 
     var body: some View {
         Button(action: openReminders) {
-            HStack(spacing: 8) {
-                Image(systemName: "checklist").foregroundColor(.green)
-                VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: DS.Spacing.md) {
+                Image(systemName: "checklist").foregroundColor(DS.Colors.success)
+                VStack(alignment: .leading, spacing: DS.Spacing.xs) {
                     Text(reminderInfo.title).font(.subheadline).fontWeight(.medium)
                     if reminderInfo.dueDate.timeIntervalSince1970 > 0 {
                         Text(reminderInfo.dueDate, style: .date).font(.caption).foregroundColor(.secondary)
@@ -708,10 +713,10 @@ struct ReminderButton: View {
                 Spacer()
                 Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
             }
-            .padding(10)
-            .background(Color(.systemBackground))
-            .cornerRadius(10)
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.green.opacity(0.3), lineWidth: 1))
+            .padding(DS.Spacing.lg)
+            .background(DS.Colors.surface)
+            .cornerRadius(DS.CornerRadius.medium)
+            .overlay(RoundedRectangle(cornerRadius: DS.CornerRadius.medium).stroke(DS.Colors.tint(DS.Colors.success, opacity: 0.3), lineWidth: 1))
         }
         .buttonStyle(PlainButtonStyle())
     }
@@ -727,9 +732,9 @@ struct ReminderButton: View {
 
     private var actionColor: Color {
         switch reminderInfo.action {
-        case "created": return .green
-        case "completed": return .blue
-        case "deleted": return .red
+        case "created": return DS.Colors.success
+        case "completed": return DS.Colors.accent
+        case "deleted": return DS.Colors.error
         default: return .secondary
         }
     }
@@ -761,25 +766,24 @@ struct PendingActionsSheet: View {
     }
 
     private var primaryColor: Color {
-        hasDelete ? .red : .orange
+        hasDelete ? DS.Colors.error : DS.Colors.warning
     }
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: DS.Spacing.xl) {
             // Header
             HStack {
                 Image(systemName: hasDelete ? "trash.fill" : "pencil.circle.fill")
                     .font(.title)
                     .foregroundColor(primaryColor)
                 Text("Confirm \(actionSummary)")
-                    .font(.title2)
-                    .fontWeight(.semibold)
+                    .heading(.medium)
             }
             .padding(.top)
 
             // Actions list
             ScrollView {
-                VStack(spacing: 12) {
+                VStack(spacing: DS.Spacing.lg) {
                     ForEach(actions.indices, id: \.self) { index in
                         PendingActionRow(action: actions[index])
                     }
@@ -791,7 +795,7 @@ struct PendingActionsSheet: View {
             if hasDelete {
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
+                        .foregroundColor(DS.Colors.warning)
                     Text("Delete actions cannot be undone")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -801,24 +805,16 @@ struct PendingActionsSheet: View {
             Spacer()
 
             // Buttons
-            HStack(spacing: 16) {
+            HStack(spacing: DS.Spacing.xl) {
                 Button(action: onCancel) {
                     Text("Cancel")
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color(.systemGray5))
-                        .foregroundColor(.primary)
-                        .cornerRadius(12)
                 }
+                .buttonStyle(SecondaryButtonStyle())
 
                 Button(action: onConfirm) {
                     Text("Confirm \(actions.count == 1 ? "" : "All")")
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(primaryColor)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
                 }
+                .buttonStyle(PrimaryButtonStyle(color: primaryColor))
             }
             .padding(.bottom)
         }
@@ -830,18 +826,18 @@ struct PendingActionRow: View {
     let action: PendingAction
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: DS.Spacing.lg) {
             // Type icon
             Image(systemName: action.icon)
                 .font(.title3)
                 .foregroundColor(action.color)
                 .frame(width: 32)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: DS.Spacing.sm) {
                 HStack {
                     Image(systemName: action.isCalendar ? "calendar" : "checklist")
                         .font(.caption)
-                        .foregroundColor(action.isCalendar ? .blue : .green)
+                        .foregroundColor(action.isCalendar ? DS.Colors.accent : DS.Colors.success)
                     Text(action.isCalendar ? "Calendar" : "Reminder")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -862,8 +858,8 @@ struct PendingActionRow: View {
             Spacer()
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(10)
+        .background(DS.Colors.groupedBackground)
+        .cornerRadius(DS.CornerRadius.medium)
     }
 }
 
@@ -873,18 +869,19 @@ struct SuggestedPromptsView: View {
     @ObservedObject var viewModel: ChatViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: DS.Spacing.xl) {
             HStack {
-                Label("推荐提示词", systemImage: "sparkles").font(.title2).fontWeight(.semibold)
+                Label("Suggested Prompts", systemImage: "sparkles").heading(.medium)
                 Spacer()
                 Button { viewModel.toggleSuggestedPrompts() } label: {
                     Image(systemName: "xmark.circle.fill").foregroundColor(.secondary).font(.title3)
                 }
+                .accessibilityLabel("Dismiss suggested prompts")
             }
-            Text("选择一个提示词快速开始对话").font(.caption).foregroundColor(.secondary)
+            Text("Pick a prompt to get started quickly").font(.caption).foregroundColor(.secondary)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
+                HStack(spacing: DS.Spacing.lg) {
                     ForEach(PromptCategory.allCases, id: \.self) { category in
                         CategoryView(category: category, prompts: viewModel.promptsByCategory(category)) {
                             viewModel.selectSuggestedPrompt($0)
@@ -894,8 +891,8 @@ struct SuggestedPromptsView: View {
             }
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .background(DS.Colors.groupedBackground)
+        .cornerRadius(DS.CornerRadius.medium + 2)
     }
 }
 
@@ -905,34 +902,57 @@ struct CategoryView: View {
     let onTap: (SuggestedPrompt) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: DS.Spacing.md) {
+            HStack(spacing: DS.Spacing.sm + 2) {
                 Circle().fill(category.swiftColor).frame(width: 8, height: 8)
                 Text(category.rawValue).font(.caption).fontWeight(.medium)
             }
             ForEach(prompts) { prompt in
                 Button { onTap(prompt) } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: prompt.icon).foregroundColor(.blue).font(.caption).frame(width: 16)
-                        VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: DS.Spacing.md) {
+                        Image(systemName: prompt.icon).foregroundColor(DS.Colors.accent).font(.caption).frame(width: 16)
+                        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
                             Text(prompt.title).font(.caption).fontWeight(.medium).foregroundColor(.primary)
                             Text(prompt.prompt.prefix(40) + (prompt.prompt.count > 40 ? "..." : ""))
                                 .font(.caption2).foregroundColor(.secondary).lineLimit(2)
                         }
                         Spacer()
                     }
-                    .padding(8)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(6)
+                    .padding(DS.Spacing.md)
+                    .background(DS.Colors.groupedBackground)
+                    .cornerRadius(DS.CornerRadius.small)
                 }
                 .buttonStyle(PlainButtonStyle())
             }
         }
-        .padding(12)
-        .background(Color(.systemBackground))
-        .cornerRadius(8)
+        .padding(DS.Spacing.lg)
+        .background(DS.Colors.surface)
+        .cornerRadius(DS.Spacing.md)
         .shadow(radius: 1)
         .frame(width: 200)
+    }
+}
+
+// MARK: - Empty Chat View
+
+struct EmptyChatView: View {
+    var body: some View {
+        VStack(spacing: DS.Spacing.xl) {
+            Image(systemName: "bubble.left.and.bubble.right")
+                .font(.system(size: 48))
+                .foregroundStyle(.secondary.opacity(0.6))
+
+            Text("How can I help?")
+                .font(.title3)
+                .fontWeight(.medium)
+                .foregroundColor(.secondary)
+
+            Text("Ask me anything, or try managing your calendar and reminders.")
+                .font(.subheadline)
+                .foregroundColor(.secondary.opacity(0.8))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+        }
     }
 }
 

@@ -34,41 +34,6 @@ enum ProcessingStatus: Equatable {
         }
     }
 
-    var icon: String {
-        switch self {
-        case .idle:
-            return ""
-        case .loadingTools:
-            return "wrench.and.screwdriver"
-        case .thinkingStep:
-            return "brain"
-        case .callingTool:
-            return "hammer"
-        case .processingToolResult:
-            return "gearshape"
-        case .generatingResponse:
-            return "text.bubble"
-        case .completed:
-            return "checkmark.circle"
-        case .error:
-            return "exclamationmark.triangle"
-        }
-    }
-
-    var isActive: Bool {
-        switch self {
-        case .idle, .completed, .error:
-            return false
-        case .loadingTools, .thinkingStep, .callingTool, .processingToolResult, .generatingResponse:
-            return true
-        }
-    }
-
-    var stepNumber: Int? {
-        guard case .thinkingStep(let step) = self else { return nil }
-        return step
-    }
-
     var isError: Bool {
         guard case .error = self else { return false }
         return true
@@ -181,9 +146,9 @@ struct ToolCallRecord: Identifiable {
 
     var statusColor: Color {
         switch status {
-        case .running: return .blue
-        case .success: return .green
-        case .failed: return .red
+        case .running: return DS.Colors.accent
+        case .success: return DS.Colors.success
+        case .failed: return DS.Colors.error
         }
     }
 }
@@ -227,9 +192,9 @@ struct PendingAction: Identifiable {
 
     var color: Color {
         switch type {
-        case .delete: return .red
-        case .update: return .orange
-        case .complete: return .green
+        case .delete: return DS.Colors.error
+        case .update: return DS.Colors.warning
+        case .complete: return DS.Colors.success
         }
     }
 

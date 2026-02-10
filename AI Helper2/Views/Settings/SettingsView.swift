@@ -169,7 +169,7 @@ struct SettingsView: View {
         Section("About") {
             LabeledContent("Version", value: "2.0.0")
             LabeledContent("Mode") {
-                Text("Reason-Act Enabled").foregroundColor(.green)
+                Text("Reason-Act Enabled").foregroundColor(DS.Colors.success)
             }
         }
     }
@@ -196,9 +196,9 @@ struct SettingsView: View {
     private func validationStatusView(for result: APIKeyValidationResult) -> some View {
         let (icon, color, text): (String, Color, String) = {
             switch result {
-            case .valid: return ("checkmark.circle.fill", .green, "API key is valid")
-            case .invalid(let msg): return ("xmark.circle.fill", .red, "Invalid: \(msg)")
-            case .networkError(let msg): return ("exclamationmark.triangle.fill", .orange, "Network error: \(msg)")
+            case .valid: return ("checkmark.circle.fill", DS.Colors.success, "API key is valid")
+            case .invalid(let msg): return ("xmark.circle.fill", DS.Colors.error, "Invalid: \(msg)")
+            case .networkError(let msg): return ("exclamationmark.triangle.fill", DS.Colors.warning, "Network error: \(msg)")
             }
         }()
 

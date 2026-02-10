@@ -9,45 +9,52 @@ struct OnboardingView: View {
     @StateObject private var viewModel = OnboardingViewModel()
 
     var body: some View {
-        TabView(selection: $viewModel.currentStep) {
-            WelcomeStep(onNext: viewModel.nextStep)
-                .tag(OnboardingStep.welcome)
+        VStack(spacing: 0) {
+            // Step indicator
+            OnboardingStepIndicator(currentStep: viewModel.currentStep)
+                .padding(.top, 12)
+                .padding(.bottom, 4)
 
-            ProviderStep(
-                selectedProvider: $viewModel.selectedProvider,
-                onNext: viewModel.nextStep
-            )
-            .tag(OnboardingStep.provider)
+            TabView(selection: $viewModel.currentStep) {
+                WelcomeStep(onNext: viewModel.nextStep)
+                    .tag(OnboardingStep.welcome)
 
-            APIKeyStep(
-                provider: viewModel.selectedProvider,
-                apiKey: $viewModel.apiKey,
-                validationState: viewModel.validationState,
-                onValidate: { Task { await viewModel.validateKey() } },
-                onNext: viewModel.nextStep
-            )
-            .tag(OnboardingStep.apiKey)
+                ProviderStep(
+                    selectedProvider: $viewModel.selectedProvider,
+                    onNext: viewModel.nextStep
+                )
+                .tag(OnboardingStep.provider)
 
-            PermissionsStep(
-                calendarStatus: viewModel.calendarPermission,
-                reminderStatus: viewModel.reminderPermission,
-                microphoneStatus: viewModel.microphonePermission,
-                onRequestCalendar: { Task { await viewModel.requestCalendarPermission() } },
-                onRequestReminder: { Task { await viewModel.requestReminderPermission() } },
-                onRequestMicrophone: { viewModel.requestMicrophonePermission() },
-                onNext: viewModel.nextStep
-            )
-            .tag(OnboardingStep.permissions)
+                APIKeyStep(
+                    provider: viewModel.selectedProvider,
+                    apiKey: $viewModel.apiKey,
+                    validationState: viewModel.validationState,
+                    onValidate: { Task { await viewModel.validateKey() } },
+                    onNext: viewModel.nextStep
+                )
+                .tag(OnboardingStep.apiKey)
 
-            ReadyStep(onFinish: {
-                viewModel.completeOnboarding()
-                isOnboardingComplete = true
-            })
-            .tag(OnboardingStep.ready)
+                PermissionsStep(
+                    calendarStatus: viewModel.calendarPermission,
+                    reminderStatus: viewModel.reminderPermission,
+                    microphoneStatus: viewModel.microphonePermission,
+                    onRequestCalendar: { Task { await viewModel.requestCalendarPermission() } },
+                    onRequestReminder: { Task { await viewModel.requestReminderPermission() } },
+                    onRequestMicrophone: { viewModel.requestMicrophonePermission() },
+                    onNext: viewModel.nextStep
+                )
+                .tag(OnboardingStep.permissions)
+
+                ReadyStep(onFinish: {
+                    viewModel.completeOnboarding()
+                    isOnboardingComplete = true
+                })
+                .tag(OnboardingStep.ready)
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
         }
-        .tabViewStyle(.page(indexDisplayMode: .never))
         .animation(.easeInOut, value: viewModel.currentStep)
-        .ignoresSafeArea()
+        .ignoresSafeArea(edges: .bottom)
     }
 }
 
@@ -59,6 +66,26 @@ enum OnboardingStep: Int, CaseIterable {
     case apiKey
     case permissions
     case ready
+}
+
+// MARK: - Step Indicator
+
+struct OnboardingStepIndicator: View {
+    let currentStep: OnboardingStep
+
+    private let steps = OnboardingStep.allCases
+
+    var body: some View {
+        HStack(spacing: DS.Spacing.md) {
+            ForEach(steps, id: \.rawValue) { step in
+                Capsule()
+                    .fill(step.rawValue <= currentStep.rawValue ? DS.Colors.accent : DS.Colors.border)
+                    .frame(height: 4)
+            }
+        }
+        .padding(.horizontal, 40)
+        .accessibilityLabel("Step \(currentStep.rawValue + 1) of \(steps.count)")
+    }
 }
 
 // MARK: - Onboarding View Model
@@ -196,17 +223,16 @@ struct WelcomeStep: View {
     let onNext: () -> Void
 
     var body: some View {
-        VStack(spacing: 32) {
+        VStack(spacing: DS.Spacing.xxxl) {
             Spacer()
 
             Image(systemName: "brain.head.profile")
                 .font(.system(size: 80))
-                .foregroundStyle(.blue.gradient)
+                .foregroundStyle(DS.Colors.accent.gradient)
 
-            VStack(spacing: 12) {
+            VStack(spacing: DS.Spacing.lg) {
                 Text("AI Helper")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
+                    .heading(.large)
 
                 Text("Your intelligent assistant for calendar, reminders, and more.")
                     .font(.body)
@@ -219,14 +245,9 @@ struct WelcomeStep: View {
 
             Button(action: onNext) {
                 Text("Get Started")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(14)
             }
-            .padding(.horizontal, 24)
+            .buttonStyle(PrimaryButtonStyle())
+            .padding(.horizontal, DS.Spacing.xxl)
             .padding(.bottom, 40)
         }
     }
@@ -239,17 +260,16 @@ struct ProviderStep: View {
     let onNext: () -> Void
 
     var body: some View {
-        VStack(spacing: 32) {
+        VStack(spacing: DS.Spacing.xxxl) {
             Spacer()
 
-            VStack(spacing: 12) {
+            VStack(spacing: DS.Spacing.lg) {
                 Image(systemName: "cpu")
                     .font(.system(size: 50))
                     .foregroundStyle(.purple.gradient)
 
                 Text("Choose AI Provider")
-                    .font(.title2)
-                    .fontWeight(.bold)
+                    .heading(.medium)
 
                 Text("Select which AI service you want to use.")
                     .font(.subheadline)
@@ -257,7 +277,7 @@ struct ProviderStep: View {
                     .multilineTextAlignment(.center)
             }
 
-            VStack(spacing: 16) {
+            VStack(spacing: DS.Spacing.xl) {
                 ProviderCard(
                     provider: .openai,
                     isSelected: selectedProvider == .openai,
@@ -269,20 +289,15 @@ struct ProviderStep: View {
                     onTap: { selectedProvider = .claude }
                 )
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, DS.Spacing.xxl)
 
             Spacer()
 
             Button(action: onNext) {
                 Text("Continue")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(14)
             }
-            .padding(.horizontal, 24)
+            .buttonStyle(PrimaryButtonStyle())
+            .padding(.horizontal, DS.Spacing.xxl)
             .padding(.bottom, 40)
         }
     }
@@ -309,15 +324,15 @@ struct ProviderCard: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 16) {
+            HStack(spacing: DS.Spacing.xl) {
                 Image(systemName: icon)
                     .font(.title2)
-                    .foregroundColor(isSelected ? .white : .blue)
+                    .foregroundColor(isSelected ? .white : DS.Colors.accent)
                     .frame(width: 44, height: 44)
-                    .background(isSelected ? Color.blue : Color.blue.opacity(0.1))
-                    .cornerRadius(10)
+                    .background(isSelected ? DS.Colors.accent : DS.Colors.tint(DS.Colors.accent))
+                    .cornerRadius(DS.CornerRadius.medium)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DS.Spacing.sm) {
                     Text(provider.rawValue)
                         .font(.headline)
                         .foregroundColor(.primary)
@@ -329,16 +344,10 @@ struct ProviderCard: View {
                 Spacer()
 
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(isSelected ? .blue : .secondary)
+                    .foregroundColor(isSelected ? DS.Colors.accent : .secondary)
                     .font(.title3)
             }
-            .padding()
-            .background(Color(.systemBackground))
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(isSelected ? Color.blue : Color(.systemGray4), lineWidth: isSelected ? 2 : 1)
-            )
+            .cardStyle(isSelected: isSelected)
         }
         .buttonStyle(PlainButtonStyle())
     }
@@ -358,31 +367,30 @@ struct APIKeyStep: View {
     }
 
     var body: some View {
-        VStack(spacing: 32) {
+        VStack(spacing: DS.Spacing.xxxl) {
             Spacer()
 
-            VStack(spacing: 12) {
+            VStack(spacing: DS.Spacing.lg) {
                 Image(systemName: "key.fill")
                     .font(.system(size: 50))
-                    .foregroundStyle(.orange.gradient)
+                    .foregroundStyle(DS.Colors.warning.gradient)
 
                 Text("Enter API Key")
-                    .font(.title2)
-                    .fontWeight(.bold)
+                    .heading(.medium)
 
                 Text("Your \(provider.rawValue) API key is stored securely in the iOS Keychain.")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, DS.Spacing.xxl)
             }
 
-            VStack(spacing: 16) {
+            VStack(spacing: DS.Spacing.xl) {
                 TextField("Paste your API key", text: $apiKey)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, DS.Spacing.xxl)
 
                 // Validation status
                 Group {
@@ -390,26 +398,26 @@ struct APIKeyStep: View {
                     case .idle:
                         EmptyView()
                     case .validating:
-                        HStack(spacing: 8) {
+                        HStack(spacing: DS.Spacing.md) {
                             ProgressView().scaleEffect(0.8)
                             Text("Validating...").font(.caption).foregroundColor(.secondary)
                         }
                     case .valid:
                         Label("API key is valid", systemImage: "checkmark.circle.fill")
-                            .font(.caption).foregroundColor(.green)
+                            .font(.caption).foregroundColor(DS.Colors.success)
                     case .invalid(let msg):
                         Label("Invalid: \(msg)", systemImage: "xmark.circle.fill")
-                            .font(.caption).foregroundColor(.red)
+                            .font(.caption).foregroundColor(DS.Colors.error)
                     case .networkError(let msg):
                         Label("Network error: \(msg)", systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption).foregroundColor(.orange)
+                            .font(.caption).foregroundColor(DS.Colors.warning)
                     }
                 }
 
                 if !apiKey.isEmpty && validationState != .validating {
                     Button("Validate Key", action: onValidate)
                         .font(.subheadline)
-                        .foregroundColor(.blue)
+                        .foregroundColor(DS.Colors.accent)
                 }
             }
 
@@ -417,15 +425,10 @@ struct APIKeyStep: View {
 
             Button(action: onNext) {
                 Text("Continue")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(canProceed ? Color.blue : Color.gray)
-                    .foregroundColor(.white)
-                    .cornerRadius(14)
             }
+            .buttonStyle(PrimaryButtonStyle(color: canProceed ? DS.Colors.accent : .gray))
             .disabled(!canProceed)
-            .padding(.horizontal, 24)
+            .padding(.horizontal, DS.Spacing.xxl)
             .padding(.bottom, 40)
         }
     }
@@ -443,26 +446,25 @@ struct PermissionsStep: View {
     let onNext: () -> Void
 
     var body: some View {
-        VStack(spacing: 32) {
+        VStack(spacing: DS.Spacing.xxxl) {
             Spacer()
 
-            VStack(spacing: 12) {
+            VStack(spacing: DS.Spacing.lg) {
                 Image(systemName: "lock.shield.fill")
                     .font(.system(size: 50))
-                    .foregroundStyle(.green.gradient)
+                    .foregroundStyle(DS.Colors.success.gradient)
 
                 Text("Grant Permissions")
-                    .font(.title2)
-                    .fontWeight(.bold)
+                    .heading(.medium)
 
                 Text("AI Helper works best with access to your calendar, reminders, and microphone.")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, DS.Spacing.xxl)
             }
 
-            VStack(spacing: 12) {
+            VStack(spacing: DS.Spacing.lg) {
                 PermissionRow(
                     icon: "calendar",
                     title: "Calendar",
@@ -485,26 +487,21 @@ struct PermissionsStep: View {
                     onRequest: onRequestMicrophone
                 )
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, DS.Spacing.xxl)
 
             Spacer()
 
-            VStack(spacing: 8) {
+            VStack(spacing: DS.Spacing.md) {
                 Button(action: onNext) {
                     Text("Continue")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(14)
                 }
+                .buttonStyle(PrimaryButtonStyle())
 
                 Text("You can change permissions later in Settings")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, DS.Spacing.xxl)
             .padding(.bottom, 40)
         }
     }
@@ -518,15 +515,15 @@ struct PermissionRow: View {
     let onRequest: () -> Void
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: DS.Spacing.xl) {
             Image(systemName: icon)
                 .font(.title3)
-                .foregroundColor(.blue)
+                .foregroundColor(DS.Colors.accent)
                 .frame(width: 36, height: 36)
-                .background(Color.blue.opacity(0.1))
-                .cornerRadius(8)
+                .background(DS.Colors.tint(DS.Colors.accent))
+                .cornerRadius(DS.Spacing.md)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Spacing.xs) {
                 Text(title).font(.subheadline).fontWeight(.medium)
                 Text(description).font(.caption).foregroundColor(.secondary)
             }
@@ -536,29 +533,17 @@ struct PermissionRow: View {
             switch status {
             case .granted:
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
+                    .foregroundColor(DS.Colors.success)
             case .denied:
                 Text("Denied")
                     .font(.caption)
-                    .foregroundColor(.red)
+                    .foregroundColor(DS.Colors.error)
             case .notDetermined:
                 Button("Allow", action: onRequest)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.blue)
-                    .cornerRadius(8)
+                    .buttonStyle(PillButtonStyle())
             }
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color(.systemGray4), lineWidth: 1)
-        )
+        .cardStyle()
     }
 }
 
@@ -568,17 +553,16 @@ struct ReadyStep: View {
     let onFinish: () -> Void
 
     var body: some View {
-        VStack(spacing: 32) {
+        VStack(spacing: DS.Spacing.xxxl) {
             Spacer()
 
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 80))
-                .foregroundStyle(.green.gradient)
+                .foregroundStyle(DS.Colors.success.gradient)
 
-            VStack(spacing: 12) {
+            VStack(spacing: DS.Spacing.lg) {
                 Text("You're All Set!")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
+                    .heading(.large)
 
                 Text("Start chatting with your AI assistant. Try asking about your schedule or creating reminders.")
                     .font(.body)
@@ -591,14 +575,9 @@ struct ReadyStep: View {
 
             Button(action: onFinish) {
                 Text("Start Chatting")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.green)
-                    .foregroundColor(.white)
-                    .cornerRadius(14)
             }
-            .padding(.horizontal, 24)
+            .buttonStyle(PrimaryButtonStyle(color: DS.Colors.success))
+            .padding(.horizontal, DS.Spacing.xxl)
             .padding(.bottom, 40)
         }
     }

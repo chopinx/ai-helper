@@ -191,14 +191,6 @@ struct ModelsTests {
 
     // MARK: - PromptCategory Tests
 
-    @Test func promptCategoryColors() {
-        #expect(PromptCategory.calendar.color == "blue")
-        #expect(PromptCategory.productivity.color == "green")
-        #expect(PromptCategory.creative.color == "purple")
-        #expect(PromptCategory.analysis.color == "orange")
-        #expect(PromptCategory.learning.color == "red")
-    }
-
     @Test func promptCategoryCaseIterable() {
         #expect(PromptCategory.allCases.count == 5)
     }
@@ -221,37 +213,6 @@ struct ModelsTests {
         #expect(ProcessingStatus.generatingResponse.displayText == "Generating response...")
         #expect(ProcessingStatus.completed.displayText == "Done")
         #expect(ProcessingStatus.error("Something failed").displayText == "Error: Something failed")
-    }
-
-    @Test func processingStatusIcon() {
-        #expect(ProcessingStatus.idle.icon == "")
-        #expect(ProcessingStatus.loadingTools.icon == "wrench.and.screwdriver")
-        #expect(ProcessingStatus.thinkingStep(1).icon == "brain")
-        #expect(ProcessingStatus.callingTool("test").icon == "hammer")
-        #expect(ProcessingStatus.processingToolResult("test").icon == "gearshape")
-        #expect(ProcessingStatus.generatingResponse.icon == "text.bubble")
-        #expect(ProcessingStatus.completed.icon == "checkmark.circle")
-        #expect(ProcessingStatus.error("err").icon == "exclamationmark.triangle")
-    }
-
-    @Test func processingStatusIsActive() {
-        // Inactive states
-        #expect(ProcessingStatus.idle.isActive == false)
-        #expect(ProcessingStatus.completed.isActive == false)
-        #expect(ProcessingStatus.error("err").isActive == false)
-
-        // Active states
-        #expect(ProcessingStatus.loadingTools.isActive == true)
-        #expect(ProcessingStatus.thinkingStep(1).isActive == true)
-        #expect(ProcessingStatus.callingTool("test").isActive == true)
-        #expect(ProcessingStatus.processingToolResult("test").isActive == true)
-        #expect(ProcessingStatus.generatingResponse.isActive == true)
-    }
-
-    @Test func processingStatusStepNumber() {
-        #expect(ProcessingStatus.thinkingStep(3).stepNumber == 3)
-        #expect(ProcessingStatus.idle.stepNumber == nil)
-        #expect(ProcessingStatus.callingTool("test").stepNumber == nil)
     }
 
     @Test func processingStatusIsError() {
