@@ -298,18 +298,24 @@ struct ChatInputView: View {
                 .onSubmit { if canSend { sendAction() } }
 
             if voiceManager.hasPermissions {
-                Button {
-                    if voiceManager.isRecording {
-                        voiceManager.stopRecording()
-                    } else {
-                        voiceManager.startRecording { currentMessage = $0 }
-                    }
-                } label: {
-                    Image(systemName: voiceManager.isRecording ? "mic.fill" : "mic")
-                        .foregroundColor(voiceManager.isRecording ? .red : .blue)
+                if voiceManager.isTranscribing {
+                    ProgressView()
                         .font(.title2)
+                        .padding(.trailing, 4)
+                } else {
+                    Button {
+                        if voiceManager.isRecording {
+                            voiceManager.stopRecording()
+                        } else {
+                            voiceManager.startRecording { currentMessage = $0 }
+                        }
+                    } label: {
+                        Image(systemName: voiceManager.isRecording ? "mic.fill" : "mic")
+                            .foregroundColor(voiceManager.isRecording ? .red : .blue)
+                            .font(.title2)
+                    }
+                    .padding(.trailing, 4)
                 }
-                .padding(.trailing, 4)
             }
 
             Button(action: sendAction) {
