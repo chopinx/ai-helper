@@ -13,7 +13,7 @@ class SimpleAIService {
     private let calendarTools = ["list_events", "create_event", "update_event", "delete_event", "search_events", "get_event_details", "get_upcoming_events"]
 
     // Tools requiring user confirmation before execution
-    private let confirmationRequiredTools = ["delete_event", "update_event", "delete_reminder", "complete_reminder"]
+    private let confirmationRequiredTools = ["delete_event", "update_event", "delete_reminder", "complete_reminder", "update_reminder"]
 
     init() {
         Task {
@@ -263,19 +263,27 @@ class SimpleAIService {
             - Summarize workload (e.g., "4 meetings, 5 hours total")
 
             ## Reminders Manager
-            Triggers: reminders, todos, tasks, to-do list, things to do, remind me
-            Tools: create_reminder, list_reminders, complete_reminder, delete_reminder, search_reminders, get_today_reminders, get_overdue_reminders
+            Triggers: reminders, todos, tasks, to-do list, things to do, remind me, move reminder, change reminder date
+            Tools: create_reminder, list_reminders, update_reminder, complete_reminder, delete_reminder, search_reminders, get_today_reminders, get_overdue_reminders
             Behaviors:
             - List existing reminders before creating duplicates (call list_reminders first)
             - Default priority: none (0)
+            - Use update_reminder to change a reminder's due date, title, notes, or priority
+            - NEVER use complete_reminder or delete_reminder when user wants to move/reschedule a reminder — use update_reminder instead
             - Confirm before deleting
-            - After complete/delete, verify by listing again
+            - After update/complete/delete, verify by listing again
             - Use get_today_reminders for daily task review
             - Use get_overdue_reminders to find missed tasks
 
             ## General Assistant
             Triggers: general questions, conversation, advice
             No tools needed - respond directly
+
+            # SAFETY RULES
+
+            - If no tool exists for what the user is asking, tell them honestly — NEVER use the closest-matching tool as a workaround
+            - If required information is missing (e.g. "move my reminder" without saying when), ASK the user for the missing details
+            - NEVER use a destructive tool (complete, delete) as a substitute for a different operation (update, move)
 
             # TOOL USAGE RULES
 
@@ -287,6 +295,7 @@ class SimpleAIService {
                - Updated event? → list_events to verify changes applied
                - Deleted event? → list_events to verify it's gone
                - Created reminder? → list_reminders to verify it exists
+               - Updated reminder? → list_reminders to verify changes applied
                - Completed reminder? → list_reminders to verify status
                - Deleted reminder? → list_reminders to verify it's gone
             3. **Handle errors**: If a tool fails or verification fails, retry with different approach

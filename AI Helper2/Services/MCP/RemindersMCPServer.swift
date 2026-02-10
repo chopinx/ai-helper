@@ -45,6 +45,17 @@ class RemindersMCPServer: MCPServer {
                 ]
             ),
             MCPTool(
+                name: "update_reminder",
+                description: "Update an existing reminder's title, due date, notes, or priority",
+                parameters: [
+                    MCPParameter(name: "title", type: "string", description: "Title of the reminder to update (used to find it)", required: true),
+                    MCPParameter(name: "new_title", type: "string", description: "New title for the reminder", required: false),
+                    MCPParameter(name: "new_due_date", type: "string", description: "New due date (e.g., '2026-02-01 10:00')", required: false),
+                    MCPParameter(name: "new_notes", type: "string", description: "New notes for the reminder", required: false),
+                    MCPParameter(name: "new_priority", type: "integer", description: "New priority: 0=none, 1=high, 5=medium, 9=low", required: false)
+                ]
+            ),
+            MCPTool(
                 name: "search_reminders",
                 description: "Search reminders by title or notes",
                 parameters: [
@@ -77,6 +88,7 @@ class RemindersMCPServer: MCPServer {
         case "create_reminder": result = try await createReminder(arguments: arguments)
         case "list_reminders": result = try await listReminders(arguments: arguments)
         case "complete_reminder": result = try await completeReminder(arguments: arguments)
+        case "update_reminder": result = try await updateReminder(arguments: arguments)
         case "delete_reminder": result = try await deleteReminder(arguments: arguments)
         case "search_reminders": result = try await searchReminders(arguments: arguments)
         case "get_today_reminders": result = try await getTodayReminders()
@@ -186,6 +198,60 @@ class RemindersMCPServer: MCPServer {
                 "reminderId": reminder.calendarItemIdentifier,
                 "reminderTitle": reminder.title ?? title,
                 "action": "completed"
+            ]
+        )
+    }
+
+    private func updateReminder(arguments: [String: Any]) async throws -> MCPResult {
+        guard let title = arguments["title"] as? String else {
+            throw MCPError.invalidArguments("Missing required field: title")
+        }
+
+        let reminders = await fetchAllReminders()
+        guard let reminder = reminders.first(where: { $0.title?.localizedCaseInsensitiveContains(title) == true && !$0.isCompleted }) else {
+            return MCPResult(message: "Reminder '\(title)' not found or already completed", isError: true)
+        }
+
+        var changes: [String] = []
+
+        if let newTitle = arguments["new_title"] as? String {
+            reminder.title = newTitle
+            changes.append("title → '\(newTitle)'")
+        }
+        if let newDueDateString = arguments["new_due_date"] as? String, let newDueDate = parseFlexibleDate(newDueDateString) {
+            reminder.dueDateComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: newDueDate)
+            changes.append("due date → '\(DateFormatter.localizedString(from: newDueDate, dateStyle: .medium, timeStyle: .short))'")
+        }
+        if let newNotes = arguments["new_notes"] as? String {
+            reminder.notes = newNotes
+            changes.append("notes updated")
+        }
+        if let newPriority = arguments["new_priority"] as? Int {
+            reminder.priority = newPriority
+            let p = newPriority == 1 ? "High" : (newPriority == 5 ? "Medium" : (newPriority == 9 ? "Low" : "None"))
+            changes.append("priority → \(p)")
+        }
+
+        if changes.isEmpty {
+            return MCPResult(message: "No changes specified for reminder '\(title)'", isError: true)
+        }
+
+        try eventStore.save(reminder, commit: true)
+
+        let updatedTitle = reminder.title ?? title
+        var dueTimestamp = 0
+        if let dc = reminder.dueDateComponents, let dueDate = Calendar.current.date(from: dc) {
+            dueTimestamp = Int(dueDate.timeIntervalSince1970)
+        }
+
+        return MCPResult(
+            message: "Reminder '\(updatedTitle)' updated: \(changes.joined(separator: ", "))",
+            isError: false,
+            metadata: [
+                "reminderId": reminder.calendarItemIdentifier,
+                "reminderTitle": updatedTitle,
+                "dueTimestamp": "\(dueTimestamp)",
+                "action": "updated"
             ]
         )
     }
