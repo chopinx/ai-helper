@@ -359,14 +359,37 @@ struct MarkdownContentView: View {
                         .textSelection(.enabled)
                 case .code(let code, let language):
                     CodeBlockView(code: code, language: language)
+                case .header(let text, let level):
+                    Text(markdownAttributedString(from: text))
+                        .font(fontForHeaderLevel(level))
+                        .bold()
+                        .textSelection(.enabled)
+                case .bulletItem(let text):
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("\u{2022}")
+                        Text(markdownAttributedString(from: text))
+                            .textSelection(.enabled)
+                    }
+                    .padding(.leading, 8)
                 }
             }
+        }
+    }
+
+    private func fontForHeaderLevel(_ level: Int) -> Font {
+        switch level {
+        case 1: return .title
+        case 2: return .title2
+        case 3: return .title3
+        default: return .headline
         }
     }
 
     private enum ContentBlock {
         case text(String)
         case code(String, String?)
+        case header(String, Int)
+        case bulletItem(String)
     }
 
     private var contentBlocks: [ContentBlock] {
@@ -398,6 +421,23 @@ struct MarkdownContentView: View {
             } else if inCodeBlock {
                 if !currentCode.isEmpty { currentCode += "\n" }
                 currentCode += line
+            } else if let headerMatch = headerLevel(of: line) {
+                // Flush accumulated text before header
+                let trimmed = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    blocks.append(.text(trimmed))
+                    currentText = ""
+                }
+                blocks.append(.header(headerMatch.text, headerMatch.level))
+            } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
+                // Flush accumulated text before bullet item
+                let trimmed = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    blocks.append(.text(trimmed))
+                    currentText = ""
+                }
+                let itemText = String(line.dropFirst(2))
+                blocks.append(.bulletItem(itemText))
             } else {
                 if !currentText.isEmpty { currentText += "\n" }
                 currentText += line
@@ -426,6 +466,19 @@ struct MarkdownContentView: View {
             return attributed
         }
         return AttributedString(text)
+    }
+
+    private func headerLevel(of line: String) -> (text: String, level: Int)? {
+        if line.hasPrefix("#### ") {
+            return (String(line.dropFirst(5)), 4)
+        } else if line.hasPrefix("### ") {
+            return (String(line.dropFirst(4)), 3)
+        } else if line.hasPrefix("## ") {
+            return (String(line.dropFirst(3)), 2)
+        } else if line.hasPrefix("# ") {
+            return (String(line.dropFirst(2)), 1)
+        }
+        return nil
     }
 }
 
