@@ -14,20 +14,28 @@ class RemindersMCPServer: MCPServer {
     func listTools() async throws -> [MCPTool] {
         [
             MCPTool(
+                name: "get_reminder_lists",
+                description: "Get all reminder lists with counts of incomplete reminders",
+                parameters: []
+            ),
+            MCPTool(
                 name: "create_reminder",
                 description: "Create a new reminder",
                 parameters: [
                     MCPParameter(name: "title", type: "string", description: "The reminder title", required: true),
                     MCPParameter(name: "due_date", type: "string", description: "Due date (e.g., '2026-02-01 10:00')", required: false),
                     MCPParameter(name: "notes", type: "string", description: "Optional notes", required: false),
-                    MCPParameter(name: "priority", type: "integer", description: "Priority: 0=none, 1=high, 5=medium, 9=low", required: false)
+                    MCPParameter(name: "priority", type: "integer", description: "Priority: 0=none, 1=high, 5=medium, 9=low", required: false),
+                    MCPParameter(name: "list", type: "string", description: "Reminder list name (default: default list)", required: false),
+                    MCPParameter(name: "recurrence", type: "string", description: "Optional recurrence: daily, weekly, monthly, yearly", required: false)
                 ]
             ),
             MCPTool(
                 name: "list_reminders",
                 description: "List all reminders",
                 parameters: [
-                    MCPParameter(name: "include_completed", type: "boolean", description: "Include completed (default: false)", required: false)
+                    MCPParameter(name: "include_completed", type: "boolean", description: "Include completed (default: false)", required: false),
+                    MCPParameter(name: "list", type: "string", description: "Filter by reminder list name", required: false)
                 ]
             ),
             MCPTool(
@@ -35,6 +43,13 @@ class RemindersMCPServer: MCPServer {
                 description: "Mark a reminder as completed",
                 parameters: [
                     MCPParameter(name: "title", type: "string", description: "Title of reminder to complete", required: true)
+                ]
+            ),
+            MCPTool(
+                name: "uncomplete_reminder",
+                description: "Mark a completed reminder as incomplete",
+                parameters: [
+                    MCPParameter(name: "title", type: "string", description: "Title of reminder to uncomplete", required: true)
                 ]
             ),
             MCPTool(
@@ -52,7 +67,8 @@ class RemindersMCPServer: MCPServer {
                     MCPParameter(name: "new_title", type: "string", description: "New title for the reminder", required: false),
                     MCPParameter(name: "new_due_date", type: "string", description: "New due date (e.g., '2026-02-01 10:00')", required: false),
                     MCPParameter(name: "new_notes", type: "string", description: "New notes for the reminder", required: false),
-                    MCPParameter(name: "new_priority", type: "integer", description: "New priority: 0=none, 1=high, 5=medium, 9=low", required: false)
+                    MCPParameter(name: "new_priority", type: "integer", description: "New priority: 0=none, 1=high, 5=medium, 9=low", required: false),
+                    MCPParameter(name: "new_recurrence", type: "string", description: "New recurrence: daily, weekly, monthly, yearly, or none to remove", required: false)
                 ]
             ),
             MCPTool(
@@ -85,9 +101,11 @@ class RemindersMCPServer: MCPServer {
 
         let result: MCPResult
         switch name {
+        case "get_reminder_lists": result = try await getReminderLists()
         case "create_reminder": result = try await createReminder(arguments: arguments)
         case "list_reminders": result = try await listReminders(arguments: arguments)
         case "complete_reminder": result = try await completeReminder(arguments: arguments)
+        case "uncomplete_reminder": result = try await uncompleteReminder(arguments: arguments)
         case "update_reminder": result = try await updateReminder(arguments: arguments)
         case "delete_reminder": result = try await deleteReminder(arguments: arguments)
         case "search_reminders": result = try await searchReminders(arguments: arguments)
@@ -135,13 +153,22 @@ class RemindersMCPServer: MCPServer {
 
         let reminder = EKReminder(eventStore: eventStore)
         reminder.title = title
-        reminder.calendar = eventStore.defaultCalendarForNewReminders()
+
+        if let listName = arguments["list"] as? String,
+           let matchedCalendar = eventStore.calendars(for: .reminder).first(where: { $0.title.localizedCaseInsensitiveContains(listName) }) {
+            reminder.calendar = matchedCalendar
+        } else {
+            reminder.calendar = eventStore.defaultCalendarForNewReminders()
+        }
 
         if let dueDateString = arguments["due_date"] as? String, let dueDate = parseFlexibleDate(dueDateString) {
             reminder.dueDateComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: dueDate)
         }
         if let notes = arguments["notes"] as? String { reminder.notes = notes }
         if let priority = arguments["priority"] as? Int { reminder.priority = priority }
+        if let recurrenceString = arguments["recurrence"] as? String, let rule = parseRecurrence(recurrenceString) {
+            reminder.recurrenceRules = [rule]
+        }
 
         try eventStore.save(reminder, commit: true)
 
@@ -166,7 +193,11 @@ class RemindersMCPServer: MCPServer {
 
     private func listReminders(arguments: [String: Any]) async throws -> MCPResult {
         let includeCompleted = arguments["include_completed"] as? Bool ?? false
-        let reminders = await fetchAllReminders()
+        let listFilter = arguments["list"] as? String
+        var reminders = await fetchAllReminders()
+        if let listFilter {
+            reminders = reminders.filter { $0.calendar.title.localizedCaseInsensitiveContains(listFilter) }
+        }
         let filtered = includeCompleted ? reminders : reminders.filter { !$0.isCompleted }
 
         if filtered.isEmpty {
@@ -230,6 +261,15 @@ class RemindersMCPServer: MCPServer {
             reminder.priority = newPriority
             let p = newPriority == 1 ? "High" : (newPriority == 5 ? "Medium" : (newPriority == 9 ? "Low" : "None"))
             changes.append("priority → \(p)")
+        }
+        if let newRecurrence = arguments["new_recurrence"] as? String {
+            if newRecurrence.lowercased() == "none" {
+                reminder.recurrenceRules = nil
+                changes.append("recurrence removed")
+            } else if let rule = parseRecurrence(newRecurrence) {
+                reminder.recurrenceRules = [rule]
+                changes.append("recurrence → \(newRecurrence)")
+            }
         }
 
         if changes.isEmpty {
@@ -330,6 +370,47 @@ class RemindersMCPServer: MCPServer {
         return MCPResult(message: "Overdue reminders (\(overdue.count)):\n\n\(list)", isError: false)
     }
 
+    private func getReminderLists() async throws -> MCPResult {
+        let calendars = eventStore.calendars(for: .reminder)
+        let allReminders = await fetchAllReminders()
+
+        let lines = calendars.map { calendar -> String in
+            let incompleteCount = allReminders.filter { $0.calendar.calendarIdentifier == calendar.calendarIdentifier && !$0.isCompleted }.count
+            return "• \(calendar.title) (\(incompleteCount) incomplete)"
+        }
+
+        if lines.isEmpty {
+            return MCPResult(message: "No reminder lists found", isError: false)
+        }
+
+        return MCPResult(message: "Reminder lists (\(calendars.count)):\n\n\(lines.joined(separator: "\n"))", isError: false)
+    }
+
+    private func uncompleteReminder(arguments: [String: Any]) async throws -> MCPResult {
+        guard let title = arguments["title"] as? String else {
+            throw MCPError.invalidArguments("Missing required field: title")
+        }
+
+        let reminders = await fetchAllReminders()
+        guard let reminder = reminders.first(where: { $0.title?.localizedCaseInsensitiveContains(title) == true && $0.isCompleted }) else {
+            return MCPResult(message: "Completed reminder '\(title)' not found", isError: true)
+        }
+
+        reminder.isCompleted = false
+        reminder.completionDate = nil
+        try eventStore.save(reminder, commit: true)
+
+        return MCPResult(
+            message: "Reminder '\(reminder.title ?? title)' marked as incomplete",
+            isError: false,
+            metadata: [
+                "reminderId": reminder.calendarItemIdentifier,
+                "reminderTitle": reminder.title ?? title,
+                "action": "uncompleted"
+            ]
+        )
+    }
+
     // MARK: - Helpers
 
     private func fetchAllReminders() async -> [EKReminder] {
@@ -351,6 +432,17 @@ class RemindersMCPServer: MCPServer {
         if reminder.priority > 0 {
             let p = reminder.priority == 1 ? "High" : (reminder.priority == 5 ? "Medium" : "Low")
             line += " [\(p)]"
+        }
+        if let rules = reminder.recurrenceRules, let rule = rules.first {
+            let freq: String
+            switch rule.frequency {
+            case .daily: freq = "Daily"
+            case .weekly: freq = "Weekly"
+            case .monthly: freq = "Monthly"
+            case .yearly: freq = "Yearly"
+            @unknown default: freq = "Recurring"
+            }
+            line += " 🔁 \(freq)"
         }
         return line
     }

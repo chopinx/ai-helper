@@ -1,4 +1,5 @@
 import Foundation
+import EventKit
 import os.log
 
 // MARK: - MCP Debug Logging
@@ -105,6 +106,21 @@ func parseFlexibleDate(_ dateString: String) -> Date? {
     }
 
     return nil
+}
+
+// MARK: - Shared Recurrence Parsing
+
+/// Parse recurrence string to EKRecurrenceRule (used by Calendar and Reminders servers)
+func parseRecurrence(_ string: String) -> EKRecurrenceRule? {
+    let frequency: EKRecurrenceFrequency
+    switch string.lowercased() {
+    case "daily": frequency = .daily
+    case "weekly": frequency = .weekly
+    case "monthly": frequency = .monthly
+    case "yearly": frequency = .yearly
+    default: return nil
+    }
+    return EKRecurrenceRule(recurrenceWith: frequency, interval: 1, end: nil)
 }
 
 // MARK: - MCP Error

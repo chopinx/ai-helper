@@ -10,10 +10,10 @@ class SimpleAIService {
     private let maxIterations = 5
 
     // Calendar tool names for routing
-    private let calendarTools = ["list_events", "create_event", "update_event", "delete_event", "search_events", "get_event_details", "get_upcoming_events"]
+    private let calendarTools = ["list_events", "create_event", "update_event", "delete_event", "search_events", "get_today_events", "get_upcoming_events", "get_free_slots"]
 
     // Tools requiring user confirmation before execution
-    private let confirmationRequiredTools = ["delete_event", "update_event", "delete_reminder", "complete_reminder", "update_reminder"]
+    private let confirmationRequiredTools = ["delete_event", "update_event", "delete_reminder", "complete_reminder", "uncomplete_reminder", "update_reminder"]
 
     init() {
         Task {
@@ -254,26 +254,36 @@ class SimpleAIService {
             # AVAILABLE SUB-AGENTS
 
             ## Calendar Secretary
-            Triggers: scheduling, meetings, events, appointments, calendar queries
-            Tools: list_events, create_event, update_event, delete_event, search_events
+            Triggers: scheduling, meetings, events, appointments, calendar queries, free time, available, when am I free, location, alert, recurring
+            Tools: list_events, create_event, update_event, delete_event, search_events, get_today_events, get_upcoming_events, get_free_slots
             Behaviors:
             - ALWAYS check existing schedule before creating events (call list_events first)
             - Default duration: 1 hour
             - Warn about conflicts
             - Summarize workload (e.g., "4 meetings, 5 hours total")
+            - Use get_free_slots to find available time slots (working hours 8:00-20:00)
+            - Use get_today_events for quick daily overview
+            - Set location and alert_minutes when creating events if user specifies them
+            - Use recurrence parameter (daily, weekly, monthly, yearly) for repeating events
+            - Use "none" as new_recurrence value to remove recurrence from an event
 
             ## Reminders Manager
-            Triggers: reminders, todos, tasks, to-do list, things to do, remind me, move reminder, change reminder date
-            Tools: create_reminder, list_reminders, update_reminder, complete_reminder, delete_reminder, search_reminders, get_today_reminders, get_overdue_reminders
+            Triggers: reminders, todos, tasks, to-do list, things to do, remind me, move reminder, change reminder date, reminder lists
+            Tools: get_reminder_lists, create_reminder, list_reminders, update_reminder, complete_reminder, uncomplete_reminder, delete_reminder, search_reminders, get_today_reminders, get_overdue_reminders
             Behaviors:
             - List existing reminders before creating duplicates (call list_reminders first)
             - Default priority: none (0)
-            - Use update_reminder to change a reminder's due date, title, notes, or priority
+            - Use update_reminder to change a reminder's due date, title, notes, priority, or recurrence
             - NEVER use complete_reminder or delete_reminder when user wants to move/reschedule a reminder — use update_reminder instead
             - Confirm before deleting
             - After update/complete/delete, verify by listing again
             - Use get_today_reminders for daily task review
             - Use get_overdue_reminders to find missed tasks
+            - Use get_reminder_lists to show all available reminder lists
+            - Use uncomplete_reminder to reopen a completed reminder
+            - When creating reminders, use the "list" parameter to assign to a specific list
+            - Use recurrence parameter (daily, weekly, monthly, yearly) for repeating reminders
+            - Use "none" as new_recurrence value to remove recurrence from a reminder
 
             ## General Assistant
             Triggers: general questions, conversation, advice
