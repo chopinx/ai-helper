@@ -212,8 +212,11 @@ class SimpleAIService {
             personaInstruction = config.systemPersona.promptPrefix
         }
 
+        // OpenAI reasoning models (o3, o4-mini, o3-mini) require "developer" role instead of "system"
+        let systemRole = (config.provider == .openai && AIProvider.isReasoningModel(config.model)) ? "developer" : "system"
+
         var messages: [[String: Any]] = [[
-            "role": "system",
+            "role": systemRole,
             "content": """
             \(personaInstruction)
 
@@ -357,9 +360,13 @@ class SimpleAIService {
         var body: [String: Any] = [
             "model": config.model,
             "messages": messages,
-            "max_tokens": config.maxTokens,
-            "temperature": config.temperature
         ]
+        if AIProvider.isReasoningModel(config.model) {
+            body["max_completion_tokens"] = config.maxTokens
+        } else {
+            body["max_tokens"] = config.maxTokens
+            body["temperature"] = config.temperature
+        }
         if !tools.isEmpty { body["tools"] = tools.map { $0.toOpenAI() } }
 
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/chat/completions")!)

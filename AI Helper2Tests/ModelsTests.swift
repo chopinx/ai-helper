@@ -20,19 +20,25 @@ struct ModelsTests {
 
     @Test func aiProviderAvailableModels() {
         let openaiModels = AIProvider.openai.availableModels
+        #expect(openaiModels.contains("gpt-5"))
+        #expect(openaiModels.contains("gpt-5-mini"))
+        #expect(openaiModels.contains("gpt-5-nano"))
+        #expect(openaiModels.contains("o3"))
+        #expect(openaiModels.contains("o4-mini"))
+        #expect(openaiModels.contains("gpt-4.1"))
+        #expect(openaiModels.contains("gpt-4.1-mini"))
         #expect(openaiModels.contains("gpt-4o"))
-        #expect(openaiModels.contains("gpt-4o-mini"))
-        #expect(openaiModels.contains("gpt-3.5-turbo"))
 
         let claudeModels = AIProvider.claude.availableModels
+        #expect(claudeModels.contains("claude-opus-4-6"))
+        #expect(claudeModels.contains("claude-sonnet-4-5"))
+        #expect(claudeModels.contains("claude-haiku-4-5"))
         #expect(claudeModels.contains("claude-3-5-sonnet-20241022"))
-        #expect(claudeModels.contains("claude-3-5-haiku-20241022"))
-        #expect(claudeModels.contains("claude-3-opus-20240229"))
     }
 
     @Test func aiProviderDefaultModel() {
-        #expect(AIProvider.openai.defaultModel == "gpt-4o-mini")
-        #expect(AIProvider.claude.defaultModel == "claude-3-5-haiku-20241022")
+        #expect(AIProvider.openai.defaultModel == "gpt-5-mini")
+        #expect(AIProvider.claude.defaultModel == "claude-haiku-4-5")
     }
 
     @Test func aiProviderDefaultModelIsInAvailableModels() {
@@ -62,6 +68,19 @@ struct ModelsTests {
         #expect(allCases.count == 2)
         #expect(allCases.contains(.openai))
         #expect(allCases.contains(.claude))
+    }
+
+    @Test func aiProviderIsReasoningModel() {
+        // Reasoning models
+        #expect(AIProvider.isReasoningModel("o3") == true)
+        #expect(AIProvider.isReasoningModel("o4-mini") == true)
+        #expect(AIProvider.isReasoningModel("o3-mini") == true)
+        #expect(AIProvider.isReasoningModel("o1") == true)
+
+        // Non-reasoning models
+        #expect(AIProvider.isReasoningModel("gpt-5") == false)
+        #expect(AIProvider.isReasoningModel("gpt-4o") == false)
+        #expect(AIProvider.isReasoningModel("claude-opus-4-6") == false)
     }
 
     // MARK: - MaxTokensOption Tests
@@ -101,7 +120,7 @@ struct ModelsTests {
         let config = APIConfiguration(
             provider: .claude,
             apiKey: "test-key",
-            model: "claude-3-opus-20240229",
+            model: "claude-opus-4-6",
             maxTokens: 2000,
             temperature: 0.5,
             enableMCP: false
@@ -109,7 +128,7 @@ struct ModelsTests {
 
         #expect(config.provider == .claude)
         #expect(config.apiKey == "test-key")
-        #expect(config.model == "claude-3-opus-20240229")
+        #expect(config.model == "claude-opus-4-6")
         #expect(config.maxTokens == 2000)
         #expect(config.temperature == 0.5)
         #expect(config.enableMCP == false)

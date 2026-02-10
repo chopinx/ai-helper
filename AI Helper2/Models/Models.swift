@@ -18,20 +18,21 @@ enum AIProvider: String, CaseIterable, Codable {
         switch self {
         case .openai:
             return [
-                "gpt-4o",              // ✅ Tool calling supported
-                "gpt-4o-mini",         // ✅ Tool calling supported
-                "gpt-4-turbo",         // ✅ Tool calling supported
-                "gpt-4",               // ✅ Tool calling supported
-                "gpt-3.5-turbo",       // ✅ Tool calling supported
-                "gpt-3.5-turbo-16k"    // ✅ Tool calling supported
+                "gpt-5",               // ✅ Latest flagship, tool calling supported
+                "gpt-5-mini",          // ✅ Fast + intelligent, tool calling supported
+                "gpt-5-nano",          // ✅ Most cost-efficient, tool calling supported
+                "o3",                  // ✅ Reasoning model, tool calling supported
+                "o4-mini",             // ✅ Reasoning model, tool calling supported
+                "gpt-4.1",            // ✅ Previous gen flagship, tool calling supported
+                "gpt-4.1-mini",       // ✅ Tool calling supported
+                "gpt-4o",             // ✅ Tool calling supported
             ]
         case .claude:
             return [
+                "claude-opus-4-6",             // ✅ Most intelligent, tool calling supported
+                "claude-sonnet-4-5",           // ✅ Best speed + intelligence, tool calling supported
+                "claude-haiku-4-5",            // ✅ Fastest, tool calling supported
                 "claude-3-5-sonnet-20241022",  // ✅ Tool calling supported
-                "claude-3-5-haiku-20241022",   // ✅ Tool calling supported
-                "claude-3-opus-20240229",      // ✅ Tool calling supported
-                "claude-3-sonnet-20240229",    // ✅ Tool calling supported
-                "claude-3-haiku-20240307"      // ✅ Tool calling supported
             ]
         }
     }
@@ -39,9 +40,9 @@ enum AIProvider: String, CaseIterable, Codable {
     var defaultModel: String {
         switch self {
         case .openai:
-            return "gpt-4o-mini"  // Default to a model with tool calling support
+            return "gpt-5-mini"  // Default to a model with tool calling support
         case .claude:
-            return "claude-3-5-haiku-20241022"  // Default to newest model with tool calling
+            return "claude-haiku-4-5"  // Default to newest fast model with tool calling
         }
     }
     
@@ -49,6 +50,11 @@ enum AIProvider: String, CaseIterable, Codable {
     var supportsToolCalling: Bool {
         // All current models in availableModels support tool calling
         return availableModels.contains(where: { $0 == defaultModel })
+    }
+
+    /// OpenAI reasoning models use different parameters
+    static func isReasoningModel(_ model: String) -> Bool {
+        model.hasPrefix("o3") || model.hasPrefix("o4") || model.hasPrefix("o1")
     }
 }
 

@@ -86,13 +86,24 @@ struct SettingsView: View {
                 ForEach(MaxTokensOption.allCases, id: \.self) { Text($0.displayName).tag($0) }
             }
 
-            VStack(alignment: .leading) {
+            if AIProvider.isReasoningModel(configuration.model) {
                 HStack {
                     Text("Temperature")
                     Spacer()
-                    Text(String(format: "%.1f", configuration.temperature)).foregroundColor(.secondary)
+                    Text("N/A").foregroundColor(.secondary)
                 }
-                Slider(value: $configuration.temperature, in: 0...2, step: 0.1)
+                Text("Reasoning models don't support temperature")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                VStack(alignment: .leading) {
+                    HStack {
+                        Text("Temperature")
+                        Spacer()
+                        Text(String(format: "%.1f", configuration.temperature)).foregroundColor(.secondary)
+                    }
+                    Slider(value: $configuration.temperature, in: 0...2, step: 0.1)
+                }
             }
         }
     }

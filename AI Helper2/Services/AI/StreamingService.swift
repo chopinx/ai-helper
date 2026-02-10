@@ -25,13 +25,17 @@ class StreamingService: NSObject, URLSessionDataDelegate {
         request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": configuration.model,
             "messages": messages,
-            "max_tokens": configuration.maxTokens,
-            "temperature": configuration.temperature,
             "stream": true
         ]
+        if AIProvider.isReasoningModel(configuration.model) {
+            body["max_completion_tokens"] = configuration.maxTokens
+        } else {
+            body["max_tokens"] = configuration.maxTokens
+            body["temperature"] = configuration.temperature
+        }
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)

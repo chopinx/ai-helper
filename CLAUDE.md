@@ -156,13 +156,14 @@ User message → AI reviews → needs tools?
 **OpenAI**:
 - Endpoint: `https://api.openai.com/v1/chat/completions`
 - Auth: `Bearer {apiKey}` header (stored in Keychain)
-- Models: gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-4, gpt-3.5-turbo
+- Models: gpt-5, gpt-5-mini, gpt-5-nano, o3, o4-mini, gpt-4.1, gpt-4.1-mini, gpt-4o
+- Note: Reasoning models (o3, o4-mini) use "developer" role instead of "system" and ignore temperature
 
 **Claude**:
 - Endpoint: `https://api.anthropic.com/v1/messages`
 - Auth: `x-api-key: {apiKey}` header (stored in Keychain)
 - Version: `anthropic-version: 2023-06-01`
-- Models: claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022, claude-3-opus-20240229
+- Models: claude-opus-4-6, claude-sonnet-4-5, claude-haiku-4-5, claude-3-5-sonnet-20241022
 
 ---
 
