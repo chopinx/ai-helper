@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Design System
 
@@ -9,26 +10,121 @@ enum DS {
     // MARK: - Colors
 
     enum Colors {
-        /// Primary action color (buttons, links, user bubbles)
-        static let accent = Color.blue
+        /// Primary action color (buttons, links, highlights)
+        static let accent = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.40, green: 0.61, blue: 1.0, alpha: 1)   // soft blue
+                : UIColor(red: 0.20, green: 0.47, blue: 0.96, alpha: 1)  // vibrant blue
+        })
         /// Success states, reminders, completion
-        static let success = Color.green
+        static let success = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.30, green: 0.82, blue: 0.50, alpha: 1)
+                : UIColor(red: 0.20, green: 0.72, blue: 0.40, alpha: 1)
+        })
         /// Errors, destructive actions
-        static let error = Color.red
+        static let error = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 1.0, green: 0.42, blue: 0.42, alpha: 1)
+                : UIColor(red: 0.92, green: 0.26, blue: 0.26, alpha: 1)
+        })
         /// Warnings, network issues
-        static let warning = Color.orange
+        static let warning = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 1.0, green: 0.72, blue: 0.30, alpha: 1)
+                : UIColor(red: 0.95, green: 0.60, blue: 0.10, alpha: 1)
+        })
 
-        // WeChat-inspired colors
-        /// User message bubble background (WeChat green)
-        static let userBubble = Color(red: 149/255, green: 236/255, blue: 105/255)
+        // MARK: Chat Colors
+
+        /// User message bubble background
+        static let userBubble = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.22, green: 0.42, blue: 0.82, alpha: 1)  // deep blue
+                : UIColor(red: 0.22, green: 0.50, blue: 0.96, alpha: 1)  // bright blue
+        })
         /// AI message bubble background
-        static let aiBubble = Color.white
+        static let aiBubble = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.18, green: 0.18, blue: 0.20, alpha: 1)  // dark surface
+                : UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1)    // white
+        })
         /// Chat area background
-        static let chatBackground = Color(red: 237/255, green: 237/255, blue: 240/255)
-        /// WeChat brand green
-        static let wechatBrand = Color(red: 7/255, green: 193/255, blue: 96/255)
+        static let chatBackground = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.07, green: 0.07, blue: 0.09, alpha: 1)  // near-black
+                : UIColor(red: 0.94, green: 0.94, blue: 0.96, alpha: 1)  // soft gray
+        })
+        /// Send button accent
+        static let sendButton = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.40, green: 0.61, blue: 1.0, alpha: 1)
+                : UIColor(red: 0.20, green: 0.47, blue: 0.96, alpha: 1)
+        })
         /// Timestamp separator text
-        static let timestampText = Color.black.opacity(0.5)
+        static let timestampText = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(white: 1.0, alpha: 0.45)
+                : UIColor(white: 0.0, alpha: 0.45)
+        })
+        /// User bubble foreground text
+        static let userBubbleText = Color.white
+        /// AI bubble foreground text
+        static let aiBubbleText = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(white: 0.93, alpha: 1)
+                : UIColor(white: 0.07, alpha: 1)
+        })
+
+        // MARK: Chat Input
+
+        /// Input area background
+        static let inputBackground = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.11, green: 0.11, blue: 0.13, alpha: 1)
+                : UIColor(red: 0.96, green: 0.96, blue: 0.97, alpha: 1)
+        })
+        /// Input field background
+        static let inputField = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.18, green: 0.18, blue: 0.20, alpha: 1)
+                : UIColor(white: 1.0, alpha: 1)
+        })
+        /// Input area top border
+        static let inputBorder = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(white: 1.0, alpha: 0.08)
+                : UIColor(white: 0.0, alpha: 0.08)
+        })
+
+        // MARK: Avatars
+
+        /// User avatar background
+        static let avatarUser = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.22, green: 0.42, blue: 0.82, alpha: 0.25)
+                : UIColor(red: 0.22, green: 0.50, blue: 0.96, alpha: 0.12)
+        })
+        /// User avatar icon
+        static let avatarUserIcon = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.50, green: 0.70, blue: 1.0, alpha: 1)
+                : UIColor(red: 0.20, green: 0.47, blue: 0.96, alpha: 1)
+        })
+        /// AI avatar background
+        static let avatarAI = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.55, green: 0.35, blue: 0.85, alpha: 0.25)
+                : UIColor(red: 0.55, green: 0.35, blue: 0.85, alpha: 0.12)
+        })
+        /// AI avatar icon
+        static let avatarAIIcon = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.72, green: 0.55, blue: 1.0, alpha: 1)
+                : UIColor(red: 0.50, green: 0.30, blue: 0.82, alpha: 1)
+        })
+
+        // MARK: Surfaces
 
         /// Card and surface background
         static let surface = Color(.systemBackground)
@@ -36,6 +132,12 @@ enum DS {
         static let groupedBackground = Color(.systemGray6)
         /// Subtle border for cards
         static let border = Color(.systemGray4)
+        /// Code block background
+        static let codeBg = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.12, green: 0.12, blue: 0.14, alpha: 1)
+                : UIColor(red: 0.95, green: 0.95, blue: 0.96, alpha: 1)
+        })
 
         /// Tinted backgrounds for banners/alerts
         static func tint(_ color: Color, opacity: Double = 0.1) -> Color {
@@ -65,8 +167,8 @@ enum DS {
         static let medium: CGFloat = 10
         /// Large elements: buttons, sheets, message bubbles
         static let large: CGFloat = 14
-        /// Chat bubbles (WeChat-style subtle rounding)
-        static let bubble: CGFloat = 6
+        /// Chat bubbles
+        static let bubble: CGFloat = 14
     }
 
 }

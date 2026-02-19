@@ -121,7 +121,7 @@ struct SettingsView: View {
                         Spacer()
                         if configuration.systemPersona == persona {
                             Image(systemName: "checkmark")
-                                .foregroundColor(.accentColor)
+                                .foregroundColor(DS.Colors.accent)
                         }
                     }
                     .contentShape(Rectangle())

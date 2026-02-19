@@ -266,7 +266,7 @@ struct ProviderStep: View {
             VStack(spacing: DS.Spacing.lg) {
                 Image(systemName: "cpu")
                     .font(.system(size: 50))
-                    .foregroundStyle(.purple.gradient)
+                    .foregroundStyle(DS.Colors.avatarAIIcon.gradient)
 
                 Text("Choose AI Provider")
                     .heading(.medium)

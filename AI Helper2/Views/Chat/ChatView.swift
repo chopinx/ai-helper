@@ -328,7 +328,7 @@ struct ChatInputView: View {
         VStack(spacing: 0) {
             // Top border line
             Rectangle()
-                .fill(Color.black.opacity(0.1))
+                .fill(DS.Colors.inputBorder)
                 .frame(height: 0.5)
 
             HStack(spacing: DS.Spacing.md) {
@@ -359,7 +359,7 @@ struct ChatInputView: View {
                     .lineLimit(1...4)
                     .padding(.horizontal, DS.Spacing.md)
                     .padding(.vertical, 6)
-                    .background(Color.white)
+                    .background(DS.Colors.inputField)
                     .cornerRadius(DS.CornerRadius.bubble)
                     .onSubmit { if canSend { sendAction() } }
 
@@ -370,14 +370,14 @@ struct ChatInputView: View {
                             .font(.system(size: 14, weight: .bold))
                             .foregroundColor(.white)
                             .frame(width: 32, height: 32)
-                            .background(DS.Colors.wechatBrand)
+                            .background(DS.Colors.sendButton)
                             .clipShape(Circle())
                     } else {
                         Image(systemName: "arrow.up")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundColor(.white)
                             .frame(width: 32, height: 32)
-                            .background(Color.gray.opacity(0.4))
+                            .background(DS.Colors.border)
                             .clipShape(Circle())
                     }
                 }
@@ -385,7 +385,7 @@ struct ChatInputView: View {
                 .accessibilityLabel("Send message")
             }
             .padding(DS.Spacing.md)
-            .background(Color(red: 246/255, green: 246/255, blue: 246/255))
+            .background(DS.Colors.inputBackground)
         }
     }
 }
@@ -570,7 +570,7 @@ struct CodeBlockView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Colors.groupedBackground)
+        .background(DS.Colors.codeBg)
         .cornerRadius(DS.Spacing.md)
     }
 }
@@ -642,11 +642,11 @@ struct MessageBubble: View {
             } else {
                 // AI avatar
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.purple.opacity(0.15))
+                    .fill(DS.Colors.avatarAI)
                     .frame(width: DS.Spacing.avatarSize, height: DS.Spacing.avatarSize)
                     .overlay(
                         Image(systemName: "brain.head.profile")
-                            .foregroundColor(.purple)
+                            .foregroundColor(DS.Colors.avatarAIIcon)
                             .font(.system(size: 20))
                     )
             }
@@ -663,7 +663,7 @@ struct MessageBubble: View {
                         Text(cleanedContent)
                             .padding(10)
                             .background(DS.Colors.userBubble)
-                            .foregroundColor(.black)
+                            .foregroundColor(DS.Colors.userBubbleText)
                             .cornerRadius(DS.CornerRadius.bubble)
                         BubbleTail(isUser: true)
                             .fill(DS.Colors.userBubble)
@@ -679,7 +679,7 @@ struct MessageBubble: View {
                         MarkdownContentView(content: cleanedContent)
                             .padding(10)
                             .background(DS.Colors.aiBubble)
-                            .foregroundColor(.black)
+                            .foregroundColor(DS.Colors.aiBubbleText)
                             .cornerRadius(DS.CornerRadius.bubble)
                     }
                 }
@@ -697,11 +697,11 @@ struct MessageBubble: View {
             if message.isUser {
                 // User avatar
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.blue.opacity(0.15))
+                    .fill(DS.Colors.avatarUser)
                     .frame(width: DS.Spacing.avatarSize, height: DS.Spacing.avatarSize)
                     .overlay(
                         Image(systemName: "person.fill")
-                            .foregroundColor(.blue)
+                            .foregroundColor(DS.Colors.avatarUserIcon)
                             .font(.system(size: 20))
                     )
             } else {
