@@ -18,8 +18,18 @@ enum DS {
         /// Warnings, network issues
         static let warning = Color.orange
 
+        // WeChat-inspired colors
+        /// User message bubble background (WeChat green)
+        static let userBubble = Color(red: 149/255, green: 236/255, blue: 105/255)
         /// AI message bubble background
-        static let aiBubble = Color(.systemGray5)
+        static let aiBubble = Color.white
+        /// Chat area background
+        static let chatBackground = Color(red: 237/255, green: 237/255, blue: 240/255)
+        /// WeChat brand green
+        static let wechatBrand = Color(red: 7/255, green: 193/255, blue: 96/255)
+        /// Timestamp separator text
+        static let timestampText = Color.black.opacity(0.5)
+
         /// Card and surface background
         static let surface = Color(.systemBackground)
         /// Grouped/recessed background
@@ -43,6 +53,7 @@ enum DS {
         static let xl: CGFloat = 16
         static let xxl: CGFloat = 24
         static let xxxl: CGFloat = 32
+        static let avatarSize: CGFloat = 40
     }
 
     // MARK: - Corner Radius
@@ -54,8 +65,8 @@ enum DS {
         static let medium: CGFloat = 10
         /// Large elements: buttons, sheets, message bubbles
         static let large: CGFloat = 14
-        /// Chat bubbles
-        static let bubble: CGFloat = 16
+        /// Chat bubbles (WeChat-style subtle rounding)
+        static let bubble: CGFloat = 6
     }
 
 }

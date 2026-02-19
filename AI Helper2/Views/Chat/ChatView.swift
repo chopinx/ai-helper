@@ -16,7 +16,15 @@ struct ChatView: View {
                 }
                 chatContent
             }
-            .navigationTitle("AI Assistant")
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    if viewModel.isLoading {
+                        Text("Typing...").italic()
+                    } else {
+                        Text("AI Assistant")
+                    }
+                }
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
             .sheet(isPresented: $showingSettings, onDismiss: viewModel.saveConfiguration) {
@@ -99,12 +107,28 @@ struct ChatView: View {
                             SuggestedPromptsView(viewModel: viewModel)
                                 .padding(.horizontal).padding(.top)
                         }
-                        ForEach(viewModel.messages) { message in
+                        ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
+                            let previousMessage: ChatMessage? = index > 0 ? viewModel.messages[index - 1] : nil
+                            let isSameSender = previousMessage?.isUser == message.isUser
+
+                            // Timestamp separator when gap > 5 minutes
+                            if let prev = previousMessage,
+                               message.timestamp.timeIntervalSince(prev.timestamp) > 300 {
+                                TimestampSeparator(date: message.timestamp)
+                            } else if index == 0 {
+                                TimestampSeparator(date: message.timestamp)
+                            }
+
                             MessageBubble(
                                 message: message,
                                 onRetry: message.isError ? { Task { await viewModel.retryMessage(message) } } : nil
                             )
                             .id(message.id)
+                            .transition(.asymmetric(
+                                insertion: .opacity.combined(with: .move(edge: .bottom)),
+                                removal: .opacity
+                            ))
+                            .padding(.top, isSameSender ? -8 : 0)
                         }
                         if viewModel.isLoading && !viewModel.streamingText.isEmpty {
                             MessageBubble(message: ChatMessage(content: viewModel.streamingText, isUser: false))
@@ -113,6 +137,7 @@ struct ChatView: View {
                     }
                     .padding()
                 }
+                .background(DS.Colors.chatBackground)
                 .onChange(of: viewModel.messages.count) { scrollToBottom(proxy) }
                 .onChange(of: viewModel.reasonActSteps.count) { if !viewModel.isLoading { scrollToBottom(proxy) } }
             }
@@ -137,7 +162,7 @@ struct ChatView: View {
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
-        withAnimation {
+        withAnimation(.easeOut(duration: 0.2)) {
             if let last = viewModel.messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
         }
     }
@@ -300,41 +325,68 @@ struct ChatInputView: View {
     }
 
     var body: some View {
-        HStack {
-            TextField("Type your message...", text: $currentMessage, axis: .vertical)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .lineLimit(1...4)
-                .onSubmit { if canSend { sendAction() } }
+        VStack(spacing: 0) {
+            // Top border line
+            Rectangle()
+                .fill(Color.black.opacity(0.1))
+                .frame(height: 0.5)
 
-            if voiceManager.hasPermissions {
-                if voiceManager.isTranscribing {
-                    ProgressView()
-                        .font(.title2)
-                        .padding(.trailing, 4)
-                } else {
-                    Button {
-                        if voiceManager.isRecording {
-                            voiceManager.stopRecording()
-                        } else {
-                            voiceManager.startRecording { currentMessage = $0 }
+            HStack(spacing: DS.Spacing.md) {
+                // Voice button
+                if voiceManager.hasPermissions {
+                    if voiceManager.isTranscribing {
+                        ProgressView()
+                            .frame(width: 32, height: 32)
+                    } else {
+                        Button {
+                            if voiceManager.isRecording {
+                                voiceManager.stopRecording()
+                            } else {
+                                voiceManager.startRecording { currentMessage = $0 }
+                            }
+                        } label: {
+                            Image(systemName: voiceManager.isRecording ? "mic.fill" : "mic")
+                                .foregroundColor(voiceManager.isRecording ? DS.Colors.error : .secondary)
+                                .frame(width: 32, height: 32)
                         }
-                    } label: {
-                        Image(systemName: voiceManager.isRecording ? "mic.fill" : "mic")
-                            .foregroundColor(voiceManager.isRecording ? DS.Colors.error : DS.Colors.accent)
-                            .font(.title2)
+                        .accessibilityLabel(voiceManager.isRecording ? "Stop recording" : "Start voice input")
                     }
-                    .accessibilityLabel(voiceManager.isRecording ? "Stop recording" : "Start voice input")
-                    .padding(.trailing, 4)
                 }
-            }
 
-            Button(action: sendAction) {
-                Image(systemName: "paperplane.fill").foregroundColor(canSend ? DS.Colors.accent : .gray)
+                // Text field with custom styling
+                TextField("Type your message...", text: $currentMessage, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...4)
+                    .padding(.horizontal, DS.Spacing.md)
+                    .padding(.vertical, 6)
+                    .background(Color.white)
+                    .cornerRadius(DS.CornerRadius.bubble)
+                    .onSubmit { if canSend { sendAction() } }
+
+                // Send button
+                Button(action: sendAction) {
+                    if canSend {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 32, height: 32)
+                            .background(DS.Colors.wechatBrand)
+                            .clipShape(Circle())
+                    } else {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 32, height: 32)
+                            .background(Color.gray.opacity(0.4))
+                            .clipShape(Circle())
+                    }
+                }
+                .disabled(!canSend)
+                .accessibilityLabel("Send message")
             }
-            .disabled(!canSend)
-            .accessibilityLabel("Send message")
+            .padding(DS.Spacing.md)
+            .background(Color(red: 246/255, green: 246/255, blue: 246/255))
         }
-        .padding()
     }
 }
 
@@ -523,6 +575,60 @@ struct CodeBlockView: View {
     }
 }
 
+// MARK: - Timestamp Separator
+
+struct TimestampSeparator: View {
+    let date: Date
+
+    var body: some View {
+        HStack {
+            Spacer()
+            Text(formatTimestamp(date))
+                .font(.caption2)
+                .foregroundColor(DS.Colors.timestampText)
+            Spacer()
+        }
+        .padding(.vertical, DS.Spacing.md)
+    }
+
+    private func formatTimestamp(_ date: Date) -> String {
+        if Calendar.current.isDateInToday(date) {
+            return date.formatted(date: .omitted, time: .shortened)
+        } else if Calendar.current.isDateInYesterday(date) {
+            return "Yesterday " + date.formatted(date: .omitted, time: .shortened)
+        } else if Calendar.current.isDate(date, equalTo: Date(), toGranularity: .weekOfYear) {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE HH:mm"
+            return formatter.string(from: date)
+        } else {
+            return date.formatted(date: .abbreviated, time: .shortened)
+        }
+    }
+}
+
+// MARK: - Bubble Tail Shape
+
+struct BubbleTail: Shape {
+    let isUser: Bool
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        if isUser {
+            // Right-pointing tail at top-right
+            path.move(to: CGPoint(x: 0, y: 0))
+            path.addLine(to: CGPoint(x: 6, y: 4))
+            path.addLine(to: CGPoint(x: 0, y: 8))
+        } else {
+            // Left-pointing tail at top-left
+            path.move(to: CGPoint(x: 6, y: 0))
+            path.addLine(to: CGPoint(x: 0, y: 4))
+            path.addLine(to: CGPoint(x: 6, y: 8))
+        }
+        path.closeSubpath()
+        return path
+    }
+}
+
 // MARK: - Message Bubble
 
 struct MessageBubble: View {
@@ -530,29 +636,52 @@ struct MessageBubble: View {
     var onRetry: (() -> Void)?
 
     var body: some View {
-        HStack {
-            if message.isUser { Spacer() }
+        HStack(alignment: .top, spacing: DS.Spacing.md) {
+            if message.isUser {
+                Spacer()
+            } else {
+                // AI avatar
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.purple.opacity(0.15))
+                    .frame(width: DS.Spacing.avatarSize, height: DS.Spacing.avatarSize)
+                    .overlay(
+                        Image(systemName: "brain.head.profile")
+                            .foregroundColor(.purple)
+                            .font(.system(size: 20))
+                    )
+            }
 
             VStack(alignment: message.isUser ? .trailing : .leading, spacing: 8) {
                 if let errorType = message.errorType {
-                    // Error message with guidance and retry
                     ErrorMessageView(
                         errorType: errorType,
                         content: cleanedContent,
                         onRetry: onRetry
                     )
                 } else if message.isUser {
-                    Text(cleanedContent)
-                        .padding(DS.Spacing.lg)
-                        .background(DS.Colors.accent)
-                        .foregroundColor(.white)
-                        .cornerRadius(DS.CornerRadius.bubble)
+                    HStack(alignment: .top, spacing: 0) {
+                        Text(cleanedContent)
+                            .padding(10)
+                            .background(DS.Colors.userBubble)
+                            .foregroundColor(.black)
+                            .cornerRadius(DS.CornerRadius.bubble)
+                        BubbleTail(isUser: true)
+                            .fill(DS.Colors.userBubble)
+                            .frame(width: 6, height: 8)
+                            .offset(y: 10)
+                    }
                 } else {
-                    MarkdownContentView(content: cleanedContent)
-                        .padding(DS.Spacing.lg)
-                        .background(DS.Colors.aiBubble)
-                        .foregroundColor(.primary)
-                        .cornerRadius(DS.CornerRadius.bubble)
+                    HStack(alignment: .top, spacing: 0) {
+                        BubbleTail(isUser: false)
+                            .fill(DS.Colors.aiBubble)
+                            .frame(width: 6, height: 8)
+                            .offset(y: 10)
+                        MarkdownContentView(content: cleanedContent)
+                            .padding(10)
+                            .background(DS.Colors.aiBubble)
+                            .foregroundColor(.black)
+                            .cornerRadius(DS.CornerRadius.bubble)
+                    }
                 }
 
                 if let eventInfo = calendarEventInfo {
@@ -563,9 +692,21 @@ struct MessageBubble: View {
                     ReminderButton(reminderInfo: reminderInfo)
                 }
             }
-            .frame(maxWidth: .infinity * 0.8, alignment: message.isUser ? .trailing : .leading)
+            .frame(maxWidth: UIScreen.main.bounds.width * 0.72, alignment: message.isUser ? .trailing : .leading)
 
-            if !message.isUser { Spacer() }
+            if message.isUser {
+                // User avatar
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.blue.opacity(0.15))
+                    .frame(width: DS.Spacing.avatarSize, height: DS.Spacing.avatarSize)
+                    .overlay(
+                        Image(systemName: "person.fill")
+                            .foregroundColor(.blue)
+                            .font(.system(size: 20))
+                    )
+            } else {
+                Spacer()
+            }
         }
     }
 
